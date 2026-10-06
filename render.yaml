@@ -6,6 +6,7 @@ services:
     name: potko-server
     runtime: node
     plan: free
+    region: singapore # closest Render region to India; create the Neon database in Singapore too
     rootDir: server
     buildCommand: npm install --omit=dev
     startCommand: node src/index.js
