@@ -1,0 +1,19 @@
+# Render blueprint for the POTKO server (free web service).
+# On Render: New > Blueprint > pick this repository. Then fill in the two secrets it asks for.
+# The database is NOT created here: use Neon (Render's free Postgres expires after 30 days).
+services:
+  - type: web
+    name: potko-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install --omit=dev
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # paste your Neon connection string (keep ?sslmode=require)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_VERSION
+        value: "22"

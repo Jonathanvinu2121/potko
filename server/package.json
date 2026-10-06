@@ -1,0 +1,32 @@
+{
+  "name": "potko-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "POTKO API and live events (Express + ws)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "db:local": "node src/scripts/local-db.js",
+    "db:schema": "node src/scripts/db.js schema",
+    "db:setup": "node src/scripts/db.js setup",
+    "db:reset": "node src/scripts/db.js reset",
+    "restaurant:add": "node src/scripts/add-restaurant.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11"
+  }
+}

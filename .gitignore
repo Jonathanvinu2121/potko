@@ -1,0 +1,11 @@
+node_modules/
+.env
+.expo/
+dist/
+.avd/
+demo/
+# generated Android project, its build caches and the built APK (npm run apk recreates them)
+app/android/
+.gradle-home/
+.gradle-home-build.log
+release/
