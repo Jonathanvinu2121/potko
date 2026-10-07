@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Image, Pressable, View } from 'react-native';
 import { Redirect, useIsFocused, useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { useAuth } from '../../src/store/auth';
@@ -42,6 +42,12 @@ export default function RoleSelect() {
         </View>
       }
     >
+      <Image
+        source={require('../../assets/logo.png')}
+        accessibilityRole="image"
+        accessibilityLabel="POTKO logo"
+        style={{ width: 64, height: 64, marginBottom: 16 }}
+      />
       <Txt size={26} weight={700}>
         Welcome to POTKO
       </Txt>

@@ -1,16 +1,21 @@
 import { useRef } from 'react';
-import { KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { KeyboardAvoidingView, Modal, PanResponder, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
+import { useKeyboardTop, useKeepInputVisible } from '../lib/keyboard';
 import { Txt } from './Txt';
 
 // A sheet that rises from the bottom over a dim scrim.
 // Tapping the scrim or swiping the handle down closes it without doing anything.
 //   footer  stays fixed under the scrolling content (the sheet's main button)
+// When the keyboard opens the whole sheet moves up to sit on top of it, gets shorter if it has
+// to, and scrolls the field being typed in into view.
 export function BottomSheet({ visible, onClose, title, footer, children }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const keyboardTop = useKeyboardTop();
+  const keepVisible = useKeepInputVisible();
 
   // The swipe handler is created once, so it reads the latest onClose through a ref.
   const onCloseRef = useRef(onClose);
@@ -25,9 +30,12 @@ export function BottomSheet({ visible, onClose, title, footer, children }) {
     })
   ).current;
 
+  // Room for the sheet: 90% of the screen, or what is left between the status bar and the keyboard.
+  const room = keyboardTop == null ? height * 0.9 : Math.max(240, keyboardTop - insets.top - 8);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable
           onPress={onClose}
           accessibilityLabel="Close"
@@ -37,12 +45,12 @@ export function BottomSheet({ visible, onClose, title, footer, children }) {
           style={{
             width: '100%',
             maxWidth: 560,
-            maxHeight: height * 0.9,
+            maxHeight: room,
             alignSelf: 'center',
             backgroundColor: t.c.card,
             borderTopLeftRadius: t.radius.sheet,
             borderTopRightRadius: t.radius.sheet,
-            paddingBottom: insets.bottom + 16,
+            paddingBottom: keyboardTop == null ? insets.bottom + 16 : 12,
           }}
         >
           <View {...swipe.panHandlers} style={{ paddingTop: 10, paddingBottom: 6, paddingHorizontal: t.space.screen, gap: 10 }}>
@@ -54,6 +62,7 @@ export function BottomSheet({ visible, onClose, title, footer, children }) {
             ) : null}
           </View>
           <ScrollView
+            {...keepVisible}
             keyboardShouldPersistTaps="handled"
             style={{ flexGrow: 0 }}
             contentContainerStyle={{ paddingHorizontal: t.space.screen, paddingBottom: 4, gap: t.d.gap }}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><g transform="translate(512 512) scale(1)"><g>
+    <mask id="tick-mw" maskUnits="userSpaceOnUse" x="-340" y="-340" width="680" height="680">
+      <rect x="-340" y="-340" width="680" height="680" fill="#fff"/>
+      <polyline points="-64.5,-8.5 -17.5,38.5 68,-52.5" fill="none" stroke="#000" stroke-width="47" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+    <g fill="#FFFFFF" mask="url(#tick-mw)">
+      <rect x="-306" y="-161" width="612" height="61" rx="30.5"/>
+      <path d="M-271 -109.5 A271 271 0 0 0 271 -109.5 Z"/>
+    </g>
+  </g></g></svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><g transform="translate(0 0) scale(1)"><rect width="1024" height="1024" rx="230.4" fill="#F47C48"/><g transform="translate(512 512)"><g transform="translate(0 8) scale(1.02)">
+    <mask id="tick-b" maskUnits="userSpaceOnUse" x="-320" y="-320" width="640" height="640">
+      <rect x="-320" y="-320" width="640" height="640" fill="#fff"/>
+      <polyline points="-98,58 -28,128 104,-18" fill="none" stroke="#000" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+    <g fill="#FFFFFF">
+      <rect x="-46" y="-236" width="92" height="46" rx="23"/>
+      <rect x="-250" y="-172" width="500" height="58" rx="29"/>
+      <path mask="url(#tick-b)" d="M-215 -78 H215 V80 A140 140 0 0 1 75 220 H-75 A140 140 0 0 1 -215 80 Z"/>
+    </g>
+  </g></g></g></svg>

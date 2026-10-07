@@ -225,6 +225,21 @@ build downloads about 1.5 GB of build tools and takes a while, later ones a few 
 Either way the address can be changed on the phone without a new build: on the first screen tap **Server**,
 type the address and choose *Check and save*. The app only saves an address where a POTKO server answers.
 
+**After changing the icon, the launch screen or `app/app.json`**, bring the Android project up to date
+before building, then put the two run scripts in `app/package.json` back to `expo start --android` and
+`expo start --ios` (the command rewrites them):
+
+```bash
+cd app
+npx expo prebuild --platform android
+```
+
+**On a laptop with little memory** (8 GB or less) close the Android emulator and other heavy programs
+while it builds; otherwise the C++ step can stop with "out of memory". A stopped build carries on from
+where it was when you run `npm run apk` again.
+
+The logo files are in `brand/` (SVG and PNG, with and without the name).
+
 This APK is signed with a development key: right for testing and for handing to a restaurant directly, not
 accepted by the Play Store. The package name is `com.potko.app` (`app/app.json`); settle it before a store
 release, because it cannot change afterwards.

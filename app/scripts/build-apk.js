@@ -60,11 +60,13 @@ const vars = {
   EXPO_PUBLIC_API_URL: server,
 };
 
-// Gradle gets more memory than the generated project asks for; with less it runs out part-way.
+// Build settings for a laptop with little memory: a modest Gradle heap and little work in parallel,
+// so the C++ compile does not run the machine out of memory. Close other heavy programs (and the
+// Android emulator) while this runs. Edit the file to taste on a bigger machine; it is not overwritten.
 const gradleSettings = path.join(vars.GRADLE_USER_HOME, 'gradle.properties');
 if (!fs.existsSync(gradleSettings)) {
   fs.mkdirSync(vars.GRADLE_USER_HOME, { recursive: true });
-  fs.writeFileSync(gradleSettings, 'org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m\n');
+  fs.writeFileSync(gradleSettings, 'org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m\norg.gradle.workers.max=2\norg.gradle.parallel=false\n');
 }
 
 console.log(`Building POTKO for Android. Server address built in: ${server}`);

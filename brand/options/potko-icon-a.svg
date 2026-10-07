@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><g transform="translate(0 0) scale(1)"><rect width="1024" height="1024" rx="230.4" fill="#F47C48"/><g transform="translate(512 512)"><g transform="translate(18 12) scale(0.94)">
+    <mask id="hole-a" maskUnits="userSpaceOnUse" x="-320" y="-320" width="640" height="640">
+      <rect x="-320" y="-320" width="640" height="640" fill="#fff"/>
+      <circle cx="-152.5" cy="218" r="19" fill="#000"/>
+    </mask>
+    <g mask="url(#hole-a)" fill="#FFFFFF">
+      <path fill-rule="evenodd" d="M0 -280 A200 200 0 1 1 0 120 A200 200 0 1 1 0 -280 Z M0 -185 A105 105 0 1 0 0 25 A105 105 0 1 0 0 -185 Z"/>
+      <path d="M-200 -80 L-105 -80 L-105 232.5 A47.5 47.5 0 0 1 -200 232.5 Z"/>
+    </g>
+  </g></g></g></svg>
