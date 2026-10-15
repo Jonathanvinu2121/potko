@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Pressable, ScrollView, View } from 'react-native';
+import { usePathname, useRouter } from 'expo-router';
 import { useTheme } from '../theme';
 import { useAuth } from '../store/auth';
 import { useConnection } from '../lib/ws';
 import { toast } from '../store/toast';
+import { crumbsFor } from '../lib/crumbs';
+import { OFFICE_ROLES } from '../lib/roles';
 import { Txt } from './Txt';
 import { Icon } from './Icon';
 import { Chip } from './Chip';
@@ -16,9 +18,17 @@ const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', min
 // The header on every signed-in screen: restaurant name with the sync dot, the screen title,
 // and the role badge. `back` adds a back arrow (every inner screen has one).
 // Tapping the sync dot says whether the app is connected; tapping the badge opens the account menu.
-export function AppHeader({ title, back, onBack }) {
+//   subtitle  a second line under the title (inner screens show it instead of the restaurant name)
+//   right     buttons for this screen, shown before the role badge
+//   crumbs    the breadcrumb trail [{ label, href }] when the screen knows better than its address;
+//             otherwise every inner screen gets one from where it sits (see lib/crumbs)
+export function AppHeader({ title, subtitle, back, onBack, right, crumbs }) {
   const t = useTheme();
   const router = useRouter();
+  const pathname = usePathname();
+  const trail = crumbs ?? (back ? crumbsFor(pathname, title) : null);
+  // Back to a screen that is already open underneath, rather than opening it a second time.
+  const goTo = (href) => (router.dismissTo ? router.dismissTo(href) : router.navigate(href));
   const user = useAuth((s) => s.user);
   const restaurant = useAuth((s) => s.restaurant);
   const status = useConnection((s) => s.status);
@@ -81,10 +91,52 @@ export function AppHeader({ title, back, onBack }) {
           <Txt size={20} weight={700} numberOfLines={1}>
             {title}
           </Txt>
+          {subtitle ? (
+            <Txt size={13} color="textSecondary" numberOfLines={1}>
+              {subtitle}
+            </Txt>
+          ) : null}
         </View>
 
+        {right}
         <Chip label={(user?.role ?? '').toUpperCase()} tone="primary" size={12} onPress={() => setMenuOpen(true)} />
       </View>
+
+      {trail && trail.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          accessibilityLabel="You are here"
+          style={{ width: '100%', maxWidth: 1200, alignSelf: 'center' }}
+          contentContainerStyle={{ alignItems: 'center', gap: 2, paddingHorizontal: t.space.screen, paddingBottom: 8 }}
+        >
+          {trail.map((crumb, index) => {
+            const last = index === trail.length - 1;
+            return (
+              <View key={`${crumb.label}-${index}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                {last || !crumb.href ? (
+                  <Txt size={12} weight={600} color={last ? 'text' : 'textSecondary'} numberOfLines={1} style={{ maxWidth: 200 }}>
+                    {crumb.label}
+                  </Txt>
+                ) : (
+                  <Pressable
+                    onPress={() => goTo(crumb.href)}
+                    hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Back to ${crumb.label}`}
+                    style={({ pressed }) => ({ minHeight: 24, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+                  >
+                    <Txt size={12} weight={600} color="primary" numberOfLines={1} style={{ maxWidth: 160 }}>
+                      {crumb.label}
+                    </Txt>
+                  </Pressable>
+                )}
+                {last ? null : <Icon name="chevron-right" size={14} color="textSecondary" />}
+              </View>
+            );
+          })}
+        </ScrollView>
+      ) : null}
 
       {!online ? (
         <View
@@ -103,12 +155,13 @@ export function AppHeader({ title, back, onBack }) {
           {user?.login_id} · {restaurant?.name}
         </Txt>
         <Button
-          title="Customise"
-          icon="palette-outline"
+          title="Settings"
+          icon="cog-outline"
           variant="secondary"
           onPress={() => {
             setMenuOpen(false);
-            router.push('/customise');
+            // The office has its full Settings under More; waiters and chefs get their own short page.
+            router.push(OFFICE_ROLES.includes(user?.role) ? '/more/settings' : '/customise');
           }}
         />
         <Button

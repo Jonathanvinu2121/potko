@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '../../../src/theme';
 import { useLive } from '../../../src/store/live';
-import { useConnection, send } from '../../../src/lib/ws';
+import { useConnection } from '../../../src/lib/ws';
 import { useNow } from '../../../src/lib/useNow';
-import { kitchenLabel, kitchenStage, progress } from '../../../src/lib/kitchen';
+import { kitchenLabel, kitchenStage, progress, kotLabel, waitingItems, newItems, acceptedItems, cookingItems, useKitchenOrder, useKitchenActions } from '../../../src/lib/kitchen';
 import { toast } from '../../../src/store/toast';
 import { Screen } from '../../../src/components/Screen';
 import { AppHeader } from '../../../src/components/AppHeader';
@@ -19,30 +19,35 @@ import { Skeleton } from '../../../src/components/Skeleton';
 import { ItemRow } from '../../../src/components/ItemRow';
 import { TimerChip } from '../../../src/components/TimerChip';
 import { DenySheet } from '../../../src/components/DenySheet';
+import { ReadyTick } from '../../../src/components/KitchenTicket';
 
 const PREP_TIMES = [10, 15, 20, 30];
 
-// C2 Order detail. One main bottom button that follows the order:
-//   New        Accept order (and Deny items)
-//   Accepted   Start preparing (optional prep time first)
+// C2 One ticket, large. Everything here can also be done from the board; this screen is for a
+// closer look, and for giving the waiter a prep time. One main button that follows the ticket:
+//   New        Accept order (or Deny items)
+//   Accepted   Start preparing, with an optional prep time. Starting goes straight back to the
+//              board, so the other orders are in view again.
 //   Preparing  tick each dish as it is ready, or Mark all ready
 export default function KitchenOrder() {
   const t = useTheme();
   const router = useRouter();
   const id = Number(useLocalSearchParams().id);
-  const order = useLive((s) => s.orders.find((o) => o.id === id));
+  // Only the dishes sent to this chef's terminals.
+  const order = useKitchenOrder(id);
   const synced = useLive((s) => s.synced);
   const online = useConnection((s) => s.status) === 'online';
   const now = useNow();
-  const [busy, setBusy] = useState(null); // which action is running: 'accept' | 'start' | 'all' | item id
+  const actions = useKitchenActions();
   const [denyOpen, setDenyOpen] = useState(false);
   const [prepMinutes, setPrepMinutes] = useState(null);
+  const toBoard = () => (router.canGoBack() ? router.back() : router.replace('/board'));
 
   if (!order) {
     return (
       <Screen scroll={false} header={<AppHeader title="Order" back />}>
         {synced ? (
-          <EmptyState icon="receipt-text-remove-outline" title="Order not found" text="It may have been closed. Go back to the board." />
+          <EmptyState icon="receipt-text-remove-outline" title="Nothing here for your kitchen" text="The order was closed, or none of its dishes are cooked at your terminal. Go back to the board." />
         ) : (
           <View style={{ gap: 12, paddingTop: 16 }}>
             <Skeleton height={48} />
@@ -55,43 +60,27 @@ export default function KitchenOrder() {
 
   const stage = kitchenStage(order);
   const { ready, total } = progress(order);
-  const deniable = order.items.filter((i) => i.status === 'sent' || i.status === 'accepted');
+  const waiting = waitingItems(order);
+  const fresh = newItems(order);
+  const accepted = acceptedItems(order);
+  const cooking = cookingItems(order);
+  const busy = actions.busy;
+  const blocked = !!busy || !online;
   // Dishes the waiter has asked a manager to cancel. The chef can see this but cannot decide it.
   const cancelAsked = order.pending_approvals.filter((a) => a.type === 'cancel').map((a) => a.order_item_id);
 
-  // Runs one kitchen action and reports what happened. The screen itself updates from the
-  // server's order.updated event, so it always shows what the server actually did.
-  const run = async (key, type, payload, done) => {
-    setBusy(key);
-    try {
-      const result = await send(type, payload);
-      done?.(result);
-    } catch (err) {
-      toast(err.message, { icon: 'alert-circle-outline', tone: 'error', duration: 4000 });
-    } finally {
-      setBusy(null);
-    }
+  const accept = () => actions.accept(order);
+  const start = async () => {
+    if (await actions.start(order, prepMinutes)) toBoard();
   };
-
-  const accept = () => run('accept', 'chef.accept', { orderId: id }, () => toast('Order accepted'));
-  const start = () =>
-    run('start', 'chef.start', { orderId: id, prepMinutes }, () => toast('Preparing · the waiter can no longer edit'));
-  const itemReady = (item) =>
-    run(item.id, 'chef.itemReady', { itemId: item.id }, (updated) =>
-      toast(kitchenStage(updated) === 'done' ? 'Sent to waiter' : `${item.name_snapshot} ready · waiter notified`, { tone: 'success' })
-    );
-  const allReady = () =>
-    run('all', 'chef.allReady', { orderId: id }, () => {
-      toast('Sent to waiter', { tone: 'success' });
-      router.back();
-    });
-
-  const deny = async ({ itemIds, reason, note }) => {
+  const allReady = async () => {
+    if (await actions.allReady(order)) toBoard();
+  };
+  const deny = async (payload) => {
     try {
-      const result = await send('chef.deny', { orderId: id, itemIds, reason, note });
+      await actions.deny(order, payload);
       setDenyOpen(false);
-      toast(`Waiter notified – ${result.accepted} accepted, ${result.unavailable} unavailable`, { icon: 'bell-outline', duration: 4000 });
-      if (!kitchenStage(result.order)) router.back(); // the whole order was denied: nothing left to cook
+      toBoard();
     } catch (err) {
       setDenyOpen(false);
       toast(err.message, { icon: 'alert-circle-outline', tone: 'error', duration: 4000 });
@@ -99,95 +88,47 @@ export default function KitchenOrder() {
   };
 
   const strip = {
-    new: { text: 'New', icon: 'circle-medium', tone: 'textSecondary' },
-    accepted: { text: 'Accepted · ready to cook', icon: 'check', tone: 'textSecondary' },
-    preparing: { text: 'Preparing', icon: 'pot-steam-outline', tone: 'primary' },
-    done: { text: 'All ready · sent to waiter', icon: 'check-circle-outline', tone: 'successText' },
+    new: { text: cooking.length || ready || accepted.length ? `${fresh.length} more to accept` : 'New · waiting to be accepted', icon: 'bell-outline', tone: 'primary' },
+    accepted: { text: 'Accepted · not started yet', icon: 'check', tone: 'primary' },
+    preparing: { text: accepted.length ? `Preparing · ${accepted.length} more to start` : 'Preparing', icon: 'pot-steam-outline', tone: 'primary' },
+    done: { text: 'All ready · the waiter has been told', icon: 'check-circle-outline', tone: 'successText' },
   }[stage] ?? { text: 'Nothing to cook · every item was denied or removed', icon: 'close-circle-outline', tone: 'error' };
 
-  // What sits at the right of each dish depends on that dish's own status.
-  const control = (item) => {
-    if (item.status === 'preparing') {
-      const working = busy === item.id;
-      return (
-        <Pressable
-          onPress={() => itemReady(item)}
-          disabled={!!busy || !online}
-          accessibilityRole="button"
-          accessibilityLabel={`Mark ${item.name_snapshot} ready`}
-          style={({ pressed }) => ({
-            width: 44,
-            height: 44,
-            borderRadius: t.radius.pill,
-            borderWidth: 2,
-            borderColor: working ? t.c.success : t.c.border,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: pressed || working ? t.c.successTint : t.c.card,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-          })}
-        >
-          {working ? <Icon name="check" color="success" /> : null}
-        </Pressable>
-      );
-    }
-    if (item.status === 'ready' || item.status === 'delivered') {
-      return (
-        <View
-          accessibilityLabel="Ready"
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: t.radius.pill,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: t.c.successTint,
-            borderWidth: 2,
-            borderColor: t.c.success,
-          }}
-        >
-          <Icon name="check" color="successText" />
-        </View>
-      );
-    }
+  // A dish that will not be cooked says why beside its name; a dish that is cooking has its tick
+  // beside the whole row.
+  const label = (item) => {
     if (item.status === 'unavailable') return <Chip label="Unavailable" icon="close-circle-outline" tone="error" />;
     if (item.status === 'removed' || item.status === 'cancelled') return <Chip label={item.status === 'removed' ? 'Removed' : 'Cancelled'} />;
     return null;
   };
+  const cooked = (item) => ['preparing', 'ready', 'delivered'].includes(item.status);
 
   const footer =
-    stage === 'new' ? (
+    fresh.length > 0 ? (
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Button title="Deny items" variant="secondary" disabled={!!busy || !online} onPress={() => setDenyOpen(true)} style={{ flex: 1 }} />
-        <Button title="Accept order" loading={busy === 'accept'} disabled={!online} onPress={accept} style={{ flex: 1.4 }} />
+        <Button title="Deny items" variant="secondary" disabled={blocked} onPress={() => setDenyOpen(true)} style={{ flex: 1 }} />
+        <Button title="Accept order" icon="check" loading={busy === `${order.id}:accept`} disabled={!online || (!!busy && busy !== `${order.id}:accept`)} onPress={accept} style={{ flex: 1.6 }} />
       </View>
-    ) : stage === 'accepted' ? (
+    ) : accepted.length > 0 ? (
       <View style={{ gap: 8 }}>
         <Txt size={12} color="textSecondary" center>
-          Waiter can’t edit after you start.
+          The waiter can’t change these dishes once you start.
         </Txt>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button title="Deny items" variant="secondary" disabled={!!busy || !online} onPress={() => setDenyOpen(true)} style={{ flex: 1 }} />
-          <Button title="Start preparing" loading={busy === 'start'} disabled={!online} onPress={start} style={{ flex: 1.4 }} />
+          <Button title="Deny items" variant="secondary" disabled={blocked} onPress={() => setDenyOpen(true)} style={{ flex: 1 }} />
+          <Button title="Start preparing" icon="pot-steam-outline" loading={busy === `${order.id}:start`} disabled={!online || (!!busy && busy !== `${order.id}:start`)} onPress={start} style={{ flex: 1.6 }} />
         </View>
       </View>
     ) : stage === 'preparing' ? (
-      <Button title="Mark all ready" loading={busy === 'all'} disabled={!online || (!!busy && busy !== 'all')} onPress={allReady} />
+      <Button title="Mark all ready" icon="check-all" loading={busy === `${order.id}:all`} disabled={!online || (!!busy && busy !== `${order.id}:all`)} onPress={allReady} />
     ) : (
-      <Button title={stage === 'done' ? 'All ready · Back to board' : 'Back to board'} variant={stage === 'done' ? 'success' : 'secondary'} icon="arrow-left" onPress={() => router.back()} />
+      <Button title="Back to board" variant={stage === 'done' ? 'success' : 'secondary'} icon="arrow-left" onPress={toBoard} />
     );
 
   return (
-    <Screen header={<AppHeader title={`${kitchenLabel(order)} · #${order.number}`} back />} footer={footer}>
+    <Screen header={<AppHeader title={`${kitchenLabel(order)} · #${order.number}`} subtitle={kotLabel(order) ?? undefined} back />} footer={footer}>
       <View style={{ gap: t.d.gap }}>
-        <View
-          style={{
-            gap: 8,
-            padding: 12,
-            borderRadius: t.radius.control,
-            backgroundColor: stage === 'done' ? t.c.successTint : stage === 'preparing' ? t.c.primaryTint : t.c.pressed,
-          }}
-        >
+        <View style={{ gap: 8, padding: 12, borderRadius: t.radius.control, backgroundColor: stage === 'done' ? t.c.successTint : stage ? t.c.primaryTint : t.c.pressed }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Icon name={strip.icon} size={18} color={strip.tone} />
             <Txt size={14} weight={600} color={strip.tone} style={{ flex: 1 }}>
@@ -195,14 +136,14 @@ export default function KitchenOrder() {
             </Txt>
             {stage === 'preparing' ? (
               <Txt size={13} weight={600} tabular>
-                {ready} of {total} items ready
+                {ready} of {total} ready
               </Txt>
             ) : null}
             {stage && stage !== 'done' ? <TimerChip since={order.created_at} now={now} /> : null}
           </View>
           {stage === 'preparing' ? (
-            <View style={{ height: 6, borderRadius: t.radius.pill, backgroundColor: t.c.border, overflow: 'hidden' }}>
-              <View style={{ width: `${total ? (ready / total) * 100 : 0}%`, height: 6, backgroundColor: t.c.primary }} />
+            <View style={{ height: 8, borderRadius: t.radius.pill, backgroundColor: t.c.border, overflow: 'hidden' }}>
+              <View style={{ width: `${total ? (ready / total) * 100 : 0}%`, height: 8, backgroundColor: t.c.primary }} />
             </View>
           ) : null}
         </View>
@@ -221,20 +162,22 @@ export default function KitchenOrder() {
             <View
               key={item.id}
               style={[
+                { flexDirection: 'row', alignItems: 'center', gap: 12 },
                 index > 0 && { paddingTop: 16, borderTopWidth: t.borderWidth, borderTopColor: t.c.border },
                 ['unavailable', 'removed', 'cancelled'].includes(item.status) && { opacity: 0.6 },
               ]}
             >
+              <View style={{ flex: 1 }}>
               <ItemRow
                 qty={item.qty}
                 name={item.name_snapshot}
                 veg={item.veg}
                 size={item.size}
-                customisations={item.customisations}
+                customisations={[...(item.addons || []).map((a) => a.name), ...item.customisations]}
                 note={item.note ? `Waiter note: ${item.note}` : null}
                 allergyNote={item.allergy_note}
                 done={item.status === 'ready' || item.status === 'delivered'}
-                right={control(item)}
+                right={label(item)}
               >
                 {cancelAsked.includes(item.id) ? (
                   <Txt size={13} weight={600} color="error">
@@ -247,12 +190,14 @@ export default function KitchenOrder() {
                   </Txt>
                 ) : null}
               </ItemRow>
+              </View>
+              {cooked(item) ? <ReadyTick item={item} working={busy === `item:${item.id}`} disabled={blocked} onPress={() => actions.itemReady(order, item)} /> : null}
             </View>
           ))}
         </Card>
 
-        {stage === 'accepted' ? (
-          <Card style={{ gap: 10 }}>
+        {fresh.length === 0 && accepted.length > 0 ? (
+          <Card style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
               <Txt size={15} weight={700}>
                 Prep time
@@ -263,12 +208,7 @@ export default function KitchenOrder() {
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {PREP_TIMES.map((minutes) => (
-                <Chip
-                  key={minutes}
-                  label={`${minutes} min`}
-                  selected={prepMinutes === minutes}
-                  onPress={() => setPrepMinutes(prepMinutes === minutes ? null : minutes)}
-                />
+                <Chip key={minutes} label={`${minutes} min`} selected={prepMinutes === minutes} onPress={() => setPrepMinutes(prepMinutes === minutes ? null : minutes)} />
               ))}
             </View>
           </Card>
@@ -281,7 +221,7 @@ export default function KitchenOrder() {
         ) : null}
       </View>
 
-      <DenySheet visible={denyOpen} items={deniable} onClose={() => setDenyOpen(false)} onSubmit={deny} />
+      <DenySheet visible={denyOpen} items={waiting} onClose={() => setDenyOpen(false)} onSubmit={deny} />
     </Screen>
   );
 }

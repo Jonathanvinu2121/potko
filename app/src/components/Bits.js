@@ -94,19 +94,22 @@ export function Row({ title, subtitle, icon, right, onPress, dim }) {
 }
 
 // An on/off switch with its label. The words say the state, so it never relies on colour.
-export function Toggle({ label, value, onChange, disabled }) {
+// quiet: the label is only read out (rows in a list, where the row itself says what it is).
+export function Toggle({ label, value, onChange, disabled, quiet }) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
-      <Txt size={13} weight={600} color={value ? 'successText' : 'textSecondary'}>
-        {label}
-      </Txt>
+      {quiet ? null : (
+        <Txt size={13} weight={600} color={value ? 'successText' : 'textSecondary'}>
+          {label}
+        </Txt>
+      )}
       <Switch
         value={value}
         onValueChange={onChange}
         disabled={disabled}
         accessibilityLabel={label}
-        trackColor={{ false: t.c.disabled, true: t.c.success }}
+        trackColor={{ false: t.c.disabled, true: t.c.primary }}
         thumbColor={t.c.card}
         activeThumbColor={t.c.card}
       />

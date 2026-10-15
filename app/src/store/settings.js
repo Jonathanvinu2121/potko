@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const DEFAULTS = { fontSize: 'M', theme: 'light', density: 'medium' };
+// sound: play a sound and vibrate when something new needs this person (an order for the chef,
+// a request for the manager).
+export const DEFAULTS = { fontSize: 'M', theme: 'light', density: 'medium', sound: true };
 
 const key = (userId) => `potko.settings.${userId}`;
-const pick = ({ fontSize, theme, density }) => ({ fontSize, theme, density });
+const pick = ({ fontSize, theme, density, sound }) => ({ fontSize, theme, density, sound: sound !== false });
 
-// The Customise choices. Saved per user on this device and applied to the whole app at once.
+// The Appearance choices. Saved per user on this device and applied to the whole app at once.
 export const useSettings = create((set, get) => ({
   ...DEFAULTS,
 

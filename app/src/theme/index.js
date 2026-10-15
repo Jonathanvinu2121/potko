@@ -4,7 +4,8 @@ import { palettes, fontScales, typeScale, densities, radius, space, fonts, break
 
 export { fonts, breakpoints };
 
-// Builds the theme for one combination of font size, colour theme and density.
+// Builds the theme for one combination of font size, colour theme and density. The colours
+// themselves are the brand's and are not a choice.
 export function makeTheme({ fontSize, theme, density }) {
   const scale = fontScales[fontSize] ?? 1;
   const c = palettes[theme] ?? palettes.light;
@@ -21,7 +22,7 @@ export function makeTheme({ fontSize, theme, density }) {
   };
 }
 
-// The current theme. Re-renders the caller the moment the user changes a Customise option.
+// The current theme. Re-renders the caller the moment the user changes an Appearance option.
 export function useTheme() {
   const fontSize = useSettings((s) => s.fontSize);
   const theme = useSettings((s) => s.theme);

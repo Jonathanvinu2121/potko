@@ -7,6 +7,7 @@ import { useDraft, lineTotal, totals } from '../../../src/store/draft';
 import { useConnection, send } from '../../../src/lib/ws';
 import { toast } from '../../../src/store/toast';
 import { money, orderLabel } from '../../../src/lib/format';
+import { usePrices } from '../../../src/lib/prices';
 import { Screen } from '../../../src/components/Screen';
 import { AppHeader } from '../../../src/components/AppHeader';
 import { Txt } from '../../../src/components/Txt';
@@ -26,6 +27,7 @@ const BOX_PAD_Y = 12;
 // W7 Order preview: check the items, edit or remove, then Send to Kitchen.
 export default function Preview() {
   const t = useTheme();
+  const prices = usePrices();
   const router = useRouter();
   const draft = useDraft();
   const menuItems = useMenu((s) => s.items);
@@ -66,11 +68,14 @@ export default function Preview() {
           customerPhone: draft.customerPhone,
           deliveryAddress: draft.deliveryAddress,
           carNumber: draft.carNumber,
+          guests: draft.type === 'dine_in' ? draft.guests ?? undefined : undefined,
           items: draft.lines.map((l) => ({
             menuItemId: l.itemId,
+            price: l.openPrice ?? undefined,
             size: l.size,
             qty: l.qty,
             customisations: l.customisations,
+            addons: (l.addons || []).map(({ group, name }) => ({ group, name })),
             note: l.note,
             allergyNote: l.allergyNote,
           })),
@@ -138,7 +143,7 @@ export default function Preview() {
               </Txt>
             ) : null}
             <Button
-              title={`Send to Kitchen · ${money(subtotal)}`}
+              title={prices.withPrice('Send to Kitchen', subtotal)}
               icon="send-outline"
               loading={sending}
               disabled={!online || count === 0}
@@ -148,6 +153,14 @@ export default function Preview() {
         )
       }
     >
+      {draft.type === 'dine_in' && !adding && !sent ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <Txt size={15} weight={600}>
+            Guests
+          </Txt>
+          <Stepper value={draft.guests ?? 1} min={1} max={99} onChange={(guests) => useDraft.setState({ guests })} />
+        </View>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <Chip label={label} icon={TYPE_ICONS[sent?.type ?? draft.type]} tone="primary" />
         <Txt size={12} weight={700} color="textSecondary" tabular style={{ letterSpacing: 1.2 }}>
@@ -159,7 +172,7 @@ export default function Preview() {
         {/* One box per dish. Tap the name to edit it, − / + for quantity, and the red cross in the
             box's top-right corner (where a window's close button is) takes the dish off the order. */}
         {lines.map((line) => {
-          const extras = [...line.customisations, line.note].filter(Boolean).join(' · ');
+          const extras = [...(line.addons || []).map((a) => a.name), ...line.customisations, line.note].filter(Boolean).join(' · ');
           return (
             <View
               key={line.key}
@@ -244,7 +257,7 @@ export default function Preview() {
                   </Pressable>
                 )}
                 <Txt size={15} weight={700} tabular>
-                  {money(lineTotal(line))}
+                  {prices.show ? money(lineTotal(line)) : ''}
                 </Txt>
               </View>
             </View>
@@ -259,32 +272,22 @@ export default function Preview() {
           <Txt color="textSecondary" center style={{ paddingVertical: 12 }}>
             Nothing in this order yet. Add items to send it to the kitchen.
           </Txt>
-        ) : (
+        ) : !prices.show ? null : (
           <Card style={{ gap: 8 }}>
             <Txt size={12} weight={700} color="textSecondary" style={{ letterSpacing: 1.2 }}>
-              BILL SUMMARY
+              ORDER SUMMARY
             </Txt>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Txt color="textSecondary">Subtotal</Txt>
-              <Txt weight={600} tabular>
-                {money(subtotal)}
-              </Txt>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Txt color="textSecondary">Discount</Txt>
-              <Txt weight={600} tabular color="textSecondary">
-                {money(0)}
-              </Txt>
-            </View>
-            <View style={{ borderTopWidth: t.borderWidth, borderTopColor: t.c.border, borderStyle: 'dashed', marginVertical: 2 }} />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Txt size={17} weight={700}>
-                Total
+                Items total
               </Txt>
               <Txt size={20} weight={700} tabular>
                 {money(subtotal)}
               </Txt>
             </View>
+            <Txt size={12} color="textSecondary">
+              Tax, any service charge and discounts are worked out on the bill.
+            </Txt>
           </Card>
         )}
       </View>

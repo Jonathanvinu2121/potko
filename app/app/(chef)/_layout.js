@@ -5,10 +5,17 @@ import { useAudioPlayer } from 'expo-audio';
 import { useTheme } from '../../src/theme';
 import { useRoleGuard } from '../../src/lib/useRoleGuard';
 import { useLive } from '../../src/store/live';
-import { kitchenLabel } from '../../src/lib/kitchen';
+import { useAuth } from '../../src/store/auth';
+import { useSettings } from '../../src/store/settings';
+import { kitchenLabel, lineTerminals } from '../../src/lib/kitchen';
 import { toast } from '../../src/store/toast';
+import { on } from '../../src/lib/ws';
 
-const sentCount = (order) => order.items.filter((i) => i.status === 'sent').length;
+// Dishes waiting to be started at this chef's own terminals.
+const sentCount = (order) => {
+  const terminals = useAuth.getState().user?.terminals ?? [];
+  return order.items.filter((i) => i.status === 'sent' && lineTerminals(i).some((t) => terminals.includes(t))).length;
+};
 
 export default function ChefLayout() {
   const t = useTheme();
@@ -30,17 +37,26 @@ export default function ChefLayout() {
         if (!was && sentCount(order) > 0) text = `New order · ${kitchenLabel(order)}`;
         else if (was && sentCount(order) > sentCount(was)) text = `More items · ${kitchenLabel(order)}`;
         if (!text) continue;
-        try {
-          chime.seekTo(0);
-          chime.play();
-        } catch {
-          // no sound is not a reason to miss the order: the toast and the board still show it
+        // Sound and vibration can be switched off on this device; the toast always shows.
+        if (useSettings.getState().sound) {
+          try {
+            chime.seekTo(0);
+            chime.play();
+          } catch {
+            // no sound is not a reason to miss the order: the toast and the board still show it
+          }
+          Vibration.vibrate(400);
         }
-        Vibration.vibrate(400);
         toast(text, { icon: 'bell-ring-outline', duration: 4000 });
       }
     });
   }, [redirect, chime]);
+
+  // A party that changes table mid-meal: the ticket shows the new table at once, and this says so.
+  useEffect(() => {
+    if (redirect) return;
+    return on('order.moved', ({ number, from, to }) => toast(`Order #${number} moved: ${from} to ${to}`, { icon: 'swap-horizontal', duration: 5000 }));
+  }, [redirect]);
 
   if (redirect) return <Redirect href={redirect} />;
   return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.c.background } }} />;

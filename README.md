@@ -1,32 +1,100 @@
 # POTKO
 
-Real-time restaurant ordering and kitchen app for 3–5 restaurants. Waiters take orders on a phone or
-tablet, the kitchen sees them instantly, and the manager keeps control of cancels and discounts.
+Restaurant POS and kitchen (KOT) app for 3–5 restaurants. Waiters take orders on a phone or tablet, each
+kitchen terminal sees its own tickets instantly, and the manager runs the floor, settles bills and approves
+sensitive requests with a PIN.
 
 - `app/` — the Expo (React Native) app. One codebase for phone, tablet and web.
 - `server/` — Node.js: Express for login and data, `ws` for live events, PostgreSQL for storage.
+- `spec/` — the product specification and design sheets this version was built from.
 
 ## What each role can do
 
 | Role | Screens |
 |---|---|
-| **Waiter** | New order (dine-in with table lock, delivery, in-car takeaway), menu with name/code search, order status (edit, remove, add more, replace an unavailable dish, request a cancel), Ready tab, Given Orders, bill with discount and payment |
-| **Chef** | Kitchen board (New / Preparing / Done), order detail: accept, deny items with a reason, start preparing, tick each dish ready, mark all ready |
-| **Manager** | Dashboard, live and past orders with full history, tables, approvals inbox with PIN, counter payments, menu and out-of-stock, staff list and login codes, daily report, settings |
-| **Admin** | Everything a manager has, plus adding and changing staff, discount limits, restaurant settings, one-time login codes on/off, the audit log |
+| **Waiter** | New order (dine-in with table lock, delivery, in-car takeaway), the tables of their own dining areas, menu with name/code search, portions and paid add-ons, order status as tags (edit, remove, add more, replace an unavailable dish, request a cancel or void), the Tables screen (tap a free table to seat guests, tap a busy one to open its order and add items; hold a table for its operations: split, merge, transfer at any time, separate, close), Ready tab, Given Orders narrowed by floor and dining area, bill with discount and payment (or "send bill to counter" when they may not take payments or see bills) |
+| **Chef** | One kitchen board for the kitchens they are assigned to, in three sections: **New orders** (Deny or **Accept**), **Preparing** (accepted tickets: **Start preparing**, then tick each dish ready, All ready) and **Done**. Everything is done on the board, so the chef never has to open a ticket; a ticket can still be opened on its own for a closer look and a prep time. **My dishes** switches their own dishes off when one runs out |
+| **Cashier** | Signs in at the manager desk and gets Tables and Payments: the payment queue, bill review, discounts within their limit, split payments, print and share the bill |
+| **Manager** | Four places: **Overview** (service running now, today's numbers, what needs attention), **Tables** (floor view of one dining area at a time, and list view of any mix of dining areas ticked in the picker; tap a busy table for its order, hold it for split, merge and transfer; order detail with status tags and full history), **Payments & Approvals** (payment queue, bill, approvals with a 4-digit PIN), **More** (Tables, Kitchens, Menu, Staff, Reports, Settings). A manager sees and manages only the roles below manager |
+| **Admin** | Everything a manager has, plus managers and admins (including switching a manager's access off), per-person permissions (among them who may see prices and bills), restaurant profile, tax and billing, printers, service hours and the audit log |
+
+Under **More**:
+
+- **Tables** — the dining areas (Main Hall, Garden, Rooftop), built like the menu's categories: search,
+  switch on and off (asked first), drag into order. Inside an area its layout (drag tables into place) and
+  its table list (drag into order, switch each table on and off). (The database also has a floor above the dining areas. The app has no "add
+  floor": a restaurant that already has several floors sees its areas grouped by floor, everyone else sees
+  dining areas only.)
+- **Kitchens** — each kitchen (terminal) with the dishes it cooks and the chefs who work there: add a
+  kitchen, tick its dishes one by one or a category at a time, assign its chefs. A dish is usually cooked
+  at one kitchen and may be shown at several; a dish no kitchen was given is cooked at the default one.
+- **Menu** — categories, then their dishes (both dragged into order and switched on and off, asked first).
+  A dish has an item code, portions, add-ons, open price, tax, its kitchens and **Goes Well With** (dishes the
+  waiter is offered with it). Add Category and "+ Add" in a category both ask **Add Manually** or **Import
+  from File**; see [Importing the menu](#importing-the-menu).
+- **Staff** — who is online; a profile with Overview, Role & Access and Activity; add or edit in steps
+  (details, then by role: a waiter's dining areas, tables, payment permission and price visibility, a chef's
+  kitchens); switch access off and on, reset password, log out of all devices, delete. A manager does this for waiters, chefs and cashiers; an admin for managers too.
+- **Reports** — Today, 7 days, 30 days, 3 months, 1 year or custom dates; Overview, Sales, Menu, Orders and
+  Staff, with one person's own numbers.
+- **Settings** — Restaurant Profile, Appearance (theme, text size, density; the colours are fixed), Manager
+  PIN, Account & Security, POS & Devices, System Preferences. Waiters and chefs have a short Settings page of
+  their own in the account menu.
+
+Every inner screen shows a breadcrumb trail under its title (More › Staff › Maya), each step a link back.
 
 ## The rules the server enforces
 
 These are checked on the server for every action, so a modified or out-of-date app cannot get round them.
 
-- **One waiter per table.** Taking a table is one atomic database update; a table locked without an order is freed after 5 idle minutes.
-- **Edit lock.** A waiter can edit or remove a dish only while it is Sent or Accepted. Once the chef starts preparing it, it is locked.
-- **Cancel after cooking starts** needs a manager or admin, who approves with their PIN.
-- **Discount limit.** Each waiter has a limit (default 3%). Above it, a manager approves with their PIN.
-- **Closing.** A bill can be closed and paid only when every dish is delivered, removed, unavailable or cancelled, and no approval is pending.
-- **Prices** are always recalculated by the server from the menu. Dishes that were not served are never charged.
-- **Roles and restaurants.** Every request is checked against the signed-in person's role and restaurant. Deactivating someone, or changing their role, signs them out at once.
-- **Audit log.** Every order, edit, removal, unavailable item, cancel, discount, approval and payment is recorded with who and when.
+- **Permissions.** Each role has a set of permissions and an admin can switch single ones on or off per
+  person. Every route and live action checks them. Hiding a button in the app is never the authorization.
+- **One waiter per table**, and only tables they are assigned: taking a table is one atomic database update;
+  a table locked without an order is freed after 5 idle minutes.
+- **Kitchen tickets.** Every dish goes to its kitchen terminal (or the default one). Each send makes one
+  numbered KOT per terminal, and a chef can only act on the dishes of their own terminals.
+- **Edit lock.** A waiter can edit or remove a dish only until the kitchen starts preparing it. After that,
+  taking it off needs an approved cancel (still cooking or ready) or void (already served).
+- **Money.** Prices, add-ons and tax always come from the menu on the server and are saved on each order line,
+  so a bill never changes when the menu or the tax rate changes later. Bills are added up in paise:
+  discount (percent or fixed, with a reason), optional service charge, tax per rate (included in the price
+  or added on top, shown as CGST + SGST), round off. Dishes that were not served are never charged.
+- **Discount limit.** Each waiter and cashier has a limit. Above it the discount waits as a request and is
+  not on the bill until a manager approves it.
+- **Approvals** (discount, cancellation, void, refund) need the approver's own 4-digit PIN, checked on the server.
+  Five wrong tries lock the PIN, for longer each time. Every decision is recorded with who and why.
+- **Payment.** A bill is paid only when every dish is served, removed, unavailable or cancelled and nothing
+  is waiting for approval. A failed attempt changes nothing, parts by different methods add up, and the same
+  payment sent twice is recorded once. A paid bill cannot be changed; money goes back only as a refund.
+- **Tables.**
+  - *Split* divides a table by seats into as many parts as wanted (T4 with 6 seats becomes T4.1 with 4 and
+    T4.2 with 2; the seats always add up). The party already there stays on the first part, the others are
+    free for new guests. Dishes can be moved to another part to give it a bill of its own; the bills then add
+    up exactly to the original. A split can be re-cut, a part guests leave is free again, and when every part
+    is free the table is whole again.
+  - *Merge* brings parts back together. *Join* pushes whole tables of one dining area together for one party
+    (T3 + T4), with one order and one bill, until that bill is closed or the tables are separated. A paid bill
+    is never folded into another.
+  - *Transfer* moves a party to a free table at any time; the order and its kitchen tickets go along and the
+    kitchen is told. A paid table stays "Paid" until someone closes it.
+  - The floor shows all of this as drawings: tables with their chairs, a split table cut into its parts,
+    joined tables fused into one.
+- **Hierarchy.** A person sees and manages only the roles below their own; an admin sees everyone.
+- **Only what is assigned reaches a device** (`server/src/scope.js`). A waiter is sent only their own dining
+  areas, tables and orders; a chef only the dishes of their kitchen terminals (and a menu of just those
+  dishes, which they may switch off when one runs out). Without "may see prices" the dish prices are taken
+  out of everything sent; the bill total stays, so a waiter who takes payments can still collect it.
+- **A dish can show at several kitchens.** Usually one; a dish ticked at several terminals (in the dish form
+  or under More, Kitchens) shows on every one of them, and any of those chefs can start it.
+- **Payment permission** for a waiter has three levels: take payment, close the table only (a manager or
+  cashier takes the money), or no access (neither). A manager sets it, and price visibility, for waiters and
+  cashiers; every other permission is the admin's.
+- **Open price.** A dish marked "Open Price" has no menu price; the waiter types it in when ordering.
+- **Sessions.** Signing in creates a session the server can end: log out one device or all, a password
+  reset, a role change or deactivation sign the person out at once.
+- **Audit log.** Sign-ins, credential and PIN changes, staff and permission changes, areas, tables and layout,
+  menu edits and imports, orders, approvals, payments, refunds and printed bills are recorded with who, their
+  role, when, old and new values and the reason. Records cannot be changed or deleted.
 
 ## Run it on your machine
 
@@ -61,8 +129,22 @@ npm run dev
 
 The server listens on port 4000. `http://localhost:4000/health` should answer `{"ok":true}`.
 
-**Demo logins** (one admin, one manager, one chef, two waiters) are listed at the top of
-[`server/sql/seed.sql`](server/sql/seed.sql).
+**Demo logins** (an admin, a manager, a cashier, two chefs and two waiters, with three floors, four dining
+areas and four kitchen terminals) are listed at the top of [`server/sql/seed.sql`](server/sql/seed.sql).
+
+**Developer mode** (testing only): put `DEV_LOGIN=1` in `server/.env` and the app's first screen lists the
+people of the test server; tap one to sign in without an ID and password. The server refuses this when it is
+hosted (`NODE_ENV=production`, or on Render) and for any request that arrives through a tunnel or proxy, so
+it only works on the computer (or the local network) the test server runs on.
+
+**Tests:** `npm test` in `server/` runs the business rules against the real server on a throwaway database:
+permissions and the staff hierarchy, table access, KOT routing, a kitchen's dishes, the one-step kitchen flow, add-ons,
+discounts and approvals, the PIN lock, payments, split, merge, join and transfer, floors, paid bills staying
+fixed, menu import, staff sessions, reports, developer sign-in and the audit log.
+
+**Upgrading:** changes to the database are in `server/sql/migrations/`. The server applies the ones it has not
+run yet every time it starts (each exactly once, existing data is kept); `npm run db:migrate` does the same
+by hand. Update the server and the app together: the screens of an older app do not match the new server.
 
 ### 2. App
 
@@ -85,16 +167,23 @@ npx expo start
 Do **not** use the demo data for a real restaurant: its logins and PIN are public in this repository.
 
 1. Create an empty Neon database and put its connection string in `server/.env`.
-2. Create the tables only, with no demo data:
+2. Create the tables only, with no demo data (or, on a database that already has data, empty it and start
+   again: `npm run db:clear -- --yes`):
    ```bash
    npm run db:schema
    ```
-3. Add the restaurant and its first admin (the PIN is optional and can be set later in Settings):
+3. **The client sets up the restaurant themselves.** Give the server a setup code (`SETUP_CODE`; on Render it
+   is generated for you, see Environment). The first person to open the app sees **Set up your restaurant**:
+   restaurant name, the setup code, their name, Staff ID, password and 4-digit approval PIN. They become the
+   admin and are signed in; the set-up screen never shows again. (Without a setup code the screen says the
+   server is not ready.) Or add the restaurant from the command line instead:
    ```bash
    npm run restaurant:add -- "Street Feast Mall Road" "Priya" "A-201" "a-strong-password" 4321
    ```
-4. Sign in as that admin and set things up in the app: **Tables**, then **Menu** (categories first, then dishes),
-   then **Staff**. Managers and admins set their own approval PIN under **Settings**.
+4. The admin's Overview shows **Getting started** (tables, menu, waiters, kitchens and their chefs), ticking
+   itself as each is done. Everything is under **More**: **Settings** (restaurant profile, tax and billing),
+   **Tables** (dining areas and their tables), **Menu** (categories, then dishes, or import them from Excel
+   or CSV), **Kitchens** (each kitchen's dishes), then **Staff** (each waiter's areas, each chef's kitchens). Managers and admins set their own 4-digit approval PIN under **Settings, Manager PIN**.
 
 Run step 3 again for each further restaurant. Staff IDs are unique across all restaurants, and each
 restaurant only ever sees its own data.
@@ -104,8 +193,9 @@ restaurant only ever sees its own data.
 1. **Database — Neon.** Create a project and set it up as above.
 2. **Server — Render.** Push this repository to GitHub, then on Render choose *New → Blueprint* and pick the
    repository: [`render.yaml`](render.yaml) describes the service. Paste the Neon connection string when asked for
-   `DATABASE_URL`. (By hand: a *Web Service* with root directory `server`, build `npm install --omit=dev`,
-   start `node src/index.js`, health check `/health`, and the variables `DATABASE_URL` and `JWT_SECRET`.)
+   `DATABASE_URL`. Render generates `JWT_SECRET` and `SETUP_CODE`. (By hand: a *Web Service* with root directory
+   `server`, build `npm install --omit=dev`, start `node src/index.js`, health check `/health`, and the
+   variables `DATABASE_URL`, `JWT_SECRET` and `SETUP_CODE`.)
 3. **App.** In `app/.env` point the app at Render, then run `npx expo start`:
    ```
    EXPO_PUBLIC_API_URL=https://YOUR-SERVICE.onrender.com
@@ -122,22 +212,50 @@ Free-plan limits to know about:
 - Do not use Render's free PostgreSQL: it expires after 30 days.
 - Before a restaurant depends on it, upgrade the Render service so it never sleeps.
 
+## Importing the menu
+
+One file for both imports: **More › Menu › Add Category › Import from File** reads only its category
+columns; **"+ Add" › Import from File** in a category reads the dishes too (and creates any category that is
+not on the menu yet). The import page gives the template (Excel with a Column Guide sheet, or CSV). One row
+per dish:
+
+| Column | What to enter |
+|---|---|
+| Item Code | 2 to 12 letters, digits or hyphens, e.g. `ITEM-PTM-001`. Matches the dish when the file is imported again. Empty: one is made |
+| Item Name, Category Name | Required |
+| Item Description, Category Description | Optional |
+| Item Type (Veg/Non-veg) | Veg or Non-veg |
+| Base Price (INR) | A number; not needed with portions or an open price |
+| Open Price? (Yes/No) | Yes: the waiter types the price when ordering |
+| Tax Mode (Restaurant/Custom/None) | Custom uses Custom Tax Rate (%), added or included as the restaurant's tax setting says |
+| Item Status (Active/Inactive), Display Order (1 = First) | Optional |
+| Kitchen Terminals | `Main Kitchen \| Tandoor` (existing names) |
+| Portions and Prices, Add-ons and Prices | `Regular:220 \| Family:390` |
+| Suggested Item Codes (for Go Well With) | `ITEM-ROT-001 \| ITEM-BN-002`: on the menu already or further down the file |
+
+Every row is checked and shown first; then "add new only" or "also update matching" (by Item Code, else by
+category and name). Rows with problems are left out and listed in a downloadable error report. Older files
+(one row per portion, `Name|Price` lists) are still read.
+
 ## How it fits together
 
 Every change follows the same path: app → server (checks role and rules) → database → broadcast to every
 connected screen. The server is the only source of truth, and there is no offline ordering: while
 disconnected the app shows a red "Reconnecting…" banner and blocks sending.
 
-- **REST** is used for login and for loading data (`/auth/login`, `/me`, `/sync`, `/menu`, `/users`, `/orders`,
-  `/reports/daily`, `/audit`, …).
+- **REST** is used for login, loading data and set-up (`/auth/login`, `/me`, `/sync`, `/menu`, `/menu/import`,
+  `/areas`, `/tables`, `/terminals`, `/users`, `/orders`, `/overview`, `/approvals`, `/reports/*`, `/restaurant`,
+  `/images`, `/audit`, …).
 - **WebSocket** (`/ws?token=JWT`) carries live actions and events as JSON `{ type, payload, id }`. The server
   answers every action with `{ type: "ack", id, ok, ... }` and runs a repeated `id` only once.
   - App → server: `table.lock`, `table.release`, `order.create`, `order.addItems`, `item.edit`, `item.remove`,
-    `chef.accept`, `chef.deny`, `chef.start`, `chef.itemReady`, `chef.allReady`, `waiter.deliver`, `table.close`,
-    `discount.apply`, `approval.request`, `approval.decide`, `payment.mark`, `ping`.
-  - Server → apps: `table.updated`, `order.created`, `order.updated` (carries every dish, so there is no
-    separate item event), `chef.denied`, `ready.count`, `approval.requested`, `approval.decided`,
-    `menu.updated`, `restaurant.updated`, `pong`.
+    `chef.start`, `chef.deny`, `chef.itemReady`, `chef.allReady`, `waiter.deliver`,
+    `discount.apply`, `approval.request`, `approval.decide`, `bill.request`, `payment.add`, `payment.refund`,
+    `order.close`, `table.split`, `table.merge`, `table.unjoin`, `table.transfer`, `ping`.
+  - Server → apps: `table.updated`, `tables.changed`, `floor.updated`, `order.created`, `order.updated`
+    (carries every dish, so there is no separate item event), `chef.denied`, `ready.count`,
+    `approval.requested`, `approval.decided`, `staff.presence`, `me.updated`, `menu.updated`,
+    `restaurant.updated`, `overview.changed`, `pong`.
 - After every reconnect the app calls `GET /sync` and redraws from the server's answer.
 - Rows are returned as they are in the database (`snake_case`, see `server/sql/schema.sql`).
   Requests and WebSocket payloads sent by the app use `camelCase` (`tableId`, `orderId`).
@@ -147,46 +265,71 @@ disconnected the app shows a red "Reconnecting…" banner and blocks sending.
 ```
 app/
   app/                  screens (Expo Router)
-    (auth)/             role.js, login.js (with one-time code), customise.js
+    (auth)/             role.js (with developer mode), login.js (with one-time code), customise.js (a waiter's or chef's Settings)
     (waiter)/           bottom bar with 3 tabs
-      new-order/        order type → details or tables → menu → preview
-      given-orders/     the list, one order's status, bill/[id]
+      new-order/        order type → details or tables → menu → preview; split, merge and transfer from the tables
+      given-orders/     the list, one order's status, bill, split, merge, transfer
       ready.js          dishes ready to deliver
-    (chef)/             kitchen board and kitchen/[id] (one order)
-    (manager)/          dashboard, orders, tables, approvals, menu, staff, reports, audit, settings, more
-                        (sidebar on tablet and desktop, bottom bar on a phone; used by manager and admin)
+    (chef)/             kitchen board (everything happens here) and kitchen/[id] (one ticket, large)
+    (manager)/          four tabs, used by manager, admin and cashier
+      overview.js
+      orders/           floor and list, one order, add items, split, merge, transfer
+      payments/         payment queue and approvals, bill/[id], approval/[id]
+      more/             tables/ (dining areas, tables), kitchens/ (and [id]: a kitchen's dishes), menu/ (items,
+                        import), staff/, reports/ (and staff/[id]: one person's numbers), settings/
+  src/screens/          screens shared by the waiter and the manager: BillScreen, SplitTable, MergeTable,
+                        TransferTable
   src/theme/tokens.js   every colour, radius and font size — screens never hardcode these
-  src/components/       Button, Chip, Card, TextField, BottomSheet, ItemSheet, ItemRow, TableCard,
-                        PinSheet, DenySheet, ConfirmSheet, ReasonSheet, Toast, AppHeader, …
-  src/store/            auth, settings (Customise), menu, draft (dishes being chosen), live (tables,
-                        orders, approvals), toast
+  src/components/       Button, Chip, Card, TextField, BottomSheet, ItemSheet, TableGraphic (a table drawn with its
+                        chairs), TableCard, TableSheet, FloorPlan, AreaPicker, KitchenTicket, OrderTags, PinSheet,
+                        BillSummary, OrderLines, Charts, Forms, Lists, Feedback, Picture, …
+  src/store/            auth (with permissions), settings (look and sound), menu, draft (dishes being chosen),
+                        live (floors, areas, tables, terminals, orders, approvals), staff, toast
   src/lib/              api.js (REST), ws.js (live connection), server.js (the server's address), orders.js,
-                        kitchen.js, audit.js, format.js
+                        units.js (tables as the floor shows them), seating.js, kitchen.js, crumbs.js, prices.js,
+                        access.js, receipt.js, reports.js, files.js, audit.js, format.js
   scripts/build-apk.js  builds the installable Android app (npm run apk)
 server/
-  src/index.js          Express + ws in one service
-  src/auth.js           tokens, role checks, login rate limit
-  src/orders.js         shared order query, the status-from-items rule, totals, the audit-log helper
-  src/routes/           auth, me, sync, menu, orders, users, manage (restaurant, tables, history, reports, audit)
-  src/ws/events.js      live connection, rooms, duplicate-action protection
+  src/index.js          Express + ws in one service; applies new migrations at start
+  src/auth.js           tokens, sessions, the wrong-try limiter
+  src/permissions.js    what each role may do, and per-person changes to it
+  src/settings.js       restaurant settings with their defaults, and the business day and time zone
+  src/bill.js           the bill: discount, service charge, tax, round off (one place, in paise)
+  src/orders.js         shared order query, the status-from-items rule, the audit-log helper
+  src/importer.js       reading, checking and matching menu files (CSV and Excel)
+  src/routes/           auth, me, sync, menu, import, floor (areas, tables, terminals), users, orders,
+                        reports, images, manage (restaurant, overview, history, approvals, audit)
+  src/ws/events.js      live connection, rooms, presence, duplicate-action protection
   src/ws/orders.js      order.create, order.addItems, item.edit, item.remove, waiter.deliver
   src/ws/tables.js      table.lock, table.release and the 5-minute stale-lock sweep
-  src/ws/chef.js        chef.accept, chef.deny, chef.start, chef.itemReady, chef.allReady
-  src/ws/billing.js     discount.apply, approval.request, approval.decide, table.close, payment.mark
-  src/ws/publish.js     sends an order change to every screen that should see it
-  src/scripts/          db.js (schema / setup / reset), local-db.js, add-restaurant.js
-  sql/schema.sql, sql/seed.sql
+  src/ws/floor.js       table.split (by seats), table.merge (parts, or joining whole tables), table.unjoin, table.transfer
+  src/ws/chef.js        chef.start, chef.deny, chef.itemReady, chef.allReady
+  src/ws/billing.js     discounts, approvals with the PIN, bill.request, payments, refunds, order.close
+  src/ws/publish.js     sends a change to every screen that should see it
+  src/scripts/          db.js (schema / migrate / setup / reset), local-db.js, add-restaurant.js, sql.js
+  sql/schema.sql        the first version's tables; sql/migrations/ everything since; sql/seed.sql demo data
+  test/                 the tests (npm test)
 ```
 
-## Version 1: what it does not do yet
+## What it does not do yet
 
-- **Tax** is not calculated or shown.
-- **Guest count** per table is not recorded; table cards show seats.
-- **Dishes and tables cannot be deleted**, only marked out of stock or renamed, so old bills stay intact.
+- **No payment gateway.** UPI, card and other payments are confirmed by the person taking them, with an
+  optional reference number. Nothing is charged by the app, and no card details are stored.
+- **Printing** uses the device's own print dialog (any printer set up on the phone, tablet or computer) and
+  the bill can be shared as a PDF. There is no direct link to a thermal printer, and kitchen tickets are
+  shown on the kitchen screens, not printed.
+- **No SMS or email.** A new person's login, a reset password and a one-time login code are told to them by
+  a manager.
+- **Approvals use the Manager PIN only.** There is no one-time code as a substitute.
+- **Hidden prices are hidden on the screen.** When "may see prices" is switched off for someone, their
+  screens leave the money out and their bills go to the counter; the app on their device still receives the
+  amounts from the server.
+- **A dish marked ready by mistake** cannot be un-marked from the kitchen board.
+- **Guest counts are not recorded.** Tables are counted by seats; reports have no "guests" figure.
 - **Alerts are in-app only** (toast, sound, vibration). There are no push notifications when the app is closed.
-- **A password reset** signs the person's live screens out but does not cancel a login token already issued;
-  deactivating them does.
-- **Printing** a bill or kitchen ticket is not included.
+- **Tax** is one configurable GST rate (with a rate per dish where needed), shown as CGST + SGST. Check the
+  rate, the GSTIN and what is printed on bills with an accountant before real use.
+- **Dates in a custom report range** are typed as year-month-day.
 
 ## Trying the Android app on this laptop
 
@@ -225,7 +368,8 @@ build downloads about 1.5 GB of build tools and takes a while, later ones a few 
 Either way the address can be changed on the phone without a new build: on the first screen tap **Server**,
 type the address and choose *Check and save*. The app only saves an address where a POTKO server answers.
 
-**After changing the icon, the launch screen or `app/app.json`**, bring the Android project up to date
+**After changing the icon, the launch screen or `app/app.json`, or adding a package with native code**
+(this version added file picking, printing, sharing and picture picking), bring the Android project up to date
 before building, then put the two run scripts in `app/package.json` back to `expo start --android` and
 `expo start --ios` (the command rewrites them):
 

@@ -7,10 +7,13 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "test": "node --test \"test/*.test.js\"",
     "db:local": "node src/scripts/local-db.js",
     "db:schema": "node src/scripts/db.js schema",
     "db:setup": "node src/scripts/db.js setup",
+    "db:migrate": "node src/scripts/db.js migrate",
     "db:reset": "node src/scripts/db.js reset",
+    "db:clear": "node src/scripts/db.js clear",
     "restaurant:add": "node src/scripts/add-restaurant.js"
   },
   "engines": {
@@ -23,6 +26,8 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.1",
+    "read-excel-file": "^9.3.12",
+    "write-excel-file": "^4.1.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {

@@ -5,12 +5,16 @@ import { BottomSheet } from './BottomSheet';
 import { Txt } from './Txt';
 import { Icon } from './Icon';
 import { Button } from './Button';
+import { IconTile } from './Picture';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'];
 
-// The manager's PIN pad. onSubmit(pin) does the work and may throw: the message is shown here
-// and the PIN is cleared so it can be typed again.
-export function PinSheet({ visible, title, text, confirmLabel = 'Approve', onSubmit, onClose }) {
+// Manager verification: the PIN pad shown before anything sensitive is approved.
+// onSubmit(pin) does the work and may throw: the message is shown here (wrong PIN, tries left,
+// locked for a while) and the PIN is cleared so it can be typed again. Nothing is approved
+// until the server has checked the PIN.
+//   onForgot  optional: shows "Forgot PIN?" and is called when it is tapped
+export function PinSheet({ visible, title = 'Manager Verification', text = 'Enter your PIN to approve this request', confirmLabel = 'Verify & Approve', onSubmit, onClose, onForgot }) {
   const t = useTheme();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(null);
@@ -26,7 +30,7 @@ export function PinSheet({ visible, title, text, confirmLabel = 'Approve', onSub
   const press = (key) => {
     setError(null);
     if (key === 'back') setPin((p) => p.slice(0, -1));
-    else if (pin.length < 6) setPin((p) => p + key);
+    else if (pin.length < 4) setPin((p) => p + key);
   };
 
   const submit = async () => {
@@ -45,46 +49,61 @@ export function PinSheet({ visible, title, text, confirmLabel = 'Approve', onSub
     <BottomSheet
       visible={visible}
       onClose={busy ? () => {} : onClose}
-      title={title}
-      footer={
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button title="Cancel" variant="secondary" disabled={busy} onPress={onClose} style={{ flex: 1 }} />
-          <Button title={confirmLabel} disabled={pin.length < 4} loading={busy} onPress={submit} style={{ flex: 1.4 }} />
-        </View>
-      }
+      footer={<Button title={confirmLabel} disabled={pin.length < 4} loading={busy} onPress={submit} />}
     >
-      {text ? (
-        <Txt size={13} color="textSecondary">
-          {text}
-        </Txt>
-      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <IconTile icon="shield-check-outline" />
+        <View style={{ flex: 1 }}>
+          <Txt size={18} weight={700}>
+            {title}
+          </Txt>
+          <Txt size={13} color="textSecondary">
+            {text}
+          </Txt>
+        </View>
+        <Pressable onPress={onClose} disabled={busy} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
+          <Icon name="close" color="textSecondary" />
+        </Pressable>
+      </View>
 
-      <View accessibilityLabel={`PIN, ${pin.length} digits entered`} style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, paddingVertical: 4 }}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+      <Txt size={14} weight={600} center>
+        Enter your 4-digit PIN
+      </Txt>
+      <View accessibilityLabel={`PIN, ${pin.length} of 4 digits entered`} style={{ flexDirection: 'row', justifyContent: 'center', gap: 12 }}>
+        {[0, 1, 2, 3].map((i) => (
           <View
             key={i}
             style={{
-              width: 14,
-              height: 14,
-              borderRadius: t.radius.pill,
-              borderWidth: 2,
-              borderColor: i < pin.length ? t.c.primary : t.c.border,
-              backgroundColor: i < pin.length ? t.c.primary : 'transparent',
-              opacity: i >= 4 && i >= pin.length ? 0.4 : 1, // digits 5 and 6 are optional
+              width: 48,
+              height: 56,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: t.radius.control,
+              borderWidth: i === pin.length ? 2 : t.borderWidth,
+              borderColor: error ? t.c.error : i === pin.length ? t.c.primary : t.c.border,
+              backgroundColor: t.c.card,
             }}
-          />
+          >
+            {i < pin.length ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: t.c.text }} /> : null}
+          </View>
         ))}
       </View>
       {error ? (
         <Txt size={13} weight={600} color="error" center accessibilityRole="alert">
           {error}
         </Txt>
+      ) : onForgot ? (
+        <Pressable onPress={onForgot} hitSlop={8} accessibilityRole="button" style={{ alignSelf: 'center' }}>
+          <Txt size={13} weight={600} color="primary" style={{ textDecorationLine: 'underline' }}>
+            Forgot PIN?
+          </Txt>
+        </Pressable>
       ) : null}
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, alignSelf: 'center', maxWidth: 320 }}>
         {KEYS.map((key, index) =>
           key === '' ? (
-            <View key={index} style={{ width: 96, height: 56 }} />
+            <View key={index} style={{ width: 96, height: 52 }} />
           ) : (
             <Pressable
               key={index}
@@ -94,7 +113,7 @@ export function PinSheet({ visible, title, text, confirmLabel = 'Approve', onSub
               accessibilityLabel={key === 'back' ? 'Delete' : key}
               style={({ pressed }) => ({
                 width: 96,
-                height: 56,
+                height: 52,
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: t.radius.control,

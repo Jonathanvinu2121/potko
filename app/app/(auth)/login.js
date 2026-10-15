@@ -64,11 +64,9 @@ export default function Login() {
     setBusy(true);
     const slowTimer = setTimeout(() => setSlow(true), 4000);
     try {
-      const { firstTime } = await useAuth.getState().login({ loginId: loginId.trim(), password, role: role.key, otp: needOtp ? otp : undefined });
+      await useAuth.getState().login({ loginId: loginId.trim(), password, role: role.key, otp: needOtp ? otp : undefined });
       toast(`Signed in as ${useAuth.getState().user.name}`);
-      // New to this device: choose a look first. Otherwise straight to work.
-      if (firstTime) router.replace({ pathname: '/customise', params: { first: '1' } });
-      else router.replace(homeFor(role.key));
+      router.replace(homeFor(useAuth.getState().user.role));
     } catch (err) {
       if (err.code === 'otp_required') {
         // Password accepted; this role also needs a code. Keep the password and ask for the code.

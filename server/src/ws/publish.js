@@ -1,7 +1,9 @@
-// Tells every screen that should know about a change to an order.
+// Tells every screen that should know about a change to an order or a table.
 const db = require('../db');
-const { getTable } = require('../tables');
+const { getTable, takeMarked } = require('../tables');
+const { can } = require('../permissions');
 const ws = require('./events');
+const { orderFor } = require('../scope');
 
 // How many items this waiter has ready to deliver, across all their open orders.
 async function readyCount(restaurantId, waiterId) {
@@ -9,21 +11,31 @@ async function readyCount(restaurantId, waiterId) {
     `SELECT count(*)::int AS count
        FROM order_items i JOIN orders o ON o.id = i.order_id
       WHERE o.restaurant_id = $1 AND o.waiter_id = $2 AND i.status = 'ready'
-        AND o.status NOT IN ('closed', 'cancelled')`,
+        AND o.status NOT IN ('paid', 'closed', 'cancelled', 'merged')`,
     [restaurantId, waiterId]
   );
   return rows[0].count;
 }
 
-// The kitchen and managers get the order, and so does the waiter who owns it (other waiters do not).
-// Everyone gets the table, because the Tables screen is shared. The waiter's Ready badge is recounted.
-async function publishOrder(order, { created = false } = {}) {
+// Everyone gets a table, because the floor is shared. A table that was put away (a split child
+// after its bill closed) is announced as removed.
+async function publishTables(restaurantId, tableIds) {
+  for (const id of [...new Set([...tableIds, ...takeMarked(restaurantId)])].filter(Boolean)) {
+    const table = await getTable(db, restaurantId, id);
+    if (!table) continue;
+    if (table.archived) ws.toRestaurant(restaurantId, 'table.removed', { id: table.id });
+    else ws.tableToRestaurant(restaurantId, table);
+  }
+}
+
+// The kitchen and everyone who may see all orders get the order, and so does the waiter who owns
+// it (other waiters do not). The waiter's Ready badge is recounted.
+async function publishOrder(order, { created = false, tables = [] } = {}) {
   const restaurantId = order.restaurant_id;
   const type = created ? 'order.created' : 'order.updated';
-  ws.toRoles(restaurantId, ['chef', 'manager', 'admin'], type, order);
-  ws.toUser(restaurantId, order.waiter_id, type, order);
-  if (order.table_id) ws.toRestaurant(restaurantId, 'table.updated', await getTable(db, restaurantId, order.table_id));
+  ws.toEach(restaurantId, type, order, (u, o) => (u.role === 'chef' || can(u, 'orders.view') || u.id === o.waiter_id ? orderFor(u, o) : null));
+  await publishTables(restaurantId, [order.table_id, ...tables]);
   ws.toUser(restaurantId, order.waiter_id, 'ready.count', { count: await readyCount(restaurantId, order.waiter_id) });
 }
 
-module.exports = { publishOrder, readyCount };
+module.exports = { publishOrder, publishTables, readyCount };

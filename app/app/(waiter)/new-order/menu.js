@@ -8,6 +8,7 @@ import { useAuth } from '../../../src/store/auth';
 import { useLive } from '../../../src/store/live';
 import { toast } from '../../../src/store/toast';
 import { money, orderLabel, tableName } from '../../../src/lib/format';
+import { usePrices } from '../../../src/lib/prices';
 import { Screen } from '../../../src/components/Screen';
 import { AppHeader } from '../../../src/components/AppHeader';
 import { Txt } from '../../../src/components/Txt';
@@ -23,6 +24,7 @@ import { ItemSheet } from '../../../src/components/ItemSheet';
 // Search by name or code and the most-ordered shortcuts work from either page.
 export default function Menu() {
   const t = useTheme();
+  const prices = usePrices();
   const router = useRouter();
   const draft = useDraft();
   const { categories, items, status, error, load } = useMenu();
@@ -132,7 +134,7 @@ export default function Menu() {
         onPress={() => setSheetItem(item)}
         disabled={!item.available}
         accessibilityRole="button"
-        accessibilityLabel={`${item.name}, ${item.code}, ${money(item.price)}${item.available ? '' : ', unavailable'}${inOrder > 0 ? `, ${inOrder} in order` : ''}`}
+        accessibilityLabel={`${item.name}, ${item.code}${prices.show ? `, ${money(item.price)}` : ''}${item.available ? '' : ', unavailable'}${inOrder > 0 ? `, ${inOrder} in order` : ''}`}
         style={({ pressed }) => ({
           flex: 1,
           maxWidth: `${100 / columns}%`,
@@ -159,7 +161,7 @@ export default function Menu() {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
           <Txt size={16} weight={700} tabular style={{ flexShrink: 1 }}>
-            {money(item.price)}
+            {prices.show ? money(item.price) : ''}
           </Txt>
           {item.available ? (
             <View
@@ -208,7 +210,7 @@ export default function Menu() {
       footer={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Txt size={15} weight={600} tabular style={{ flex: 1 }}>
-            {count === 0 ? 'No items yet' : `${count} ${count === 1 ? 'item' : 'items'} · ${money(subtotal)}`}
+            {count === 0 ? 'No items yet' : prices.withPrice(`${count} ${count === 1 ? 'item' : 'items'}`, subtotal)}
           </Txt>
           <Button title="Review order" disabled={count === 0} onPress={() => router.push('/new-order/preview')} style={{ minWidth: 150 }} />
         </View>
@@ -260,7 +262,7 @@ export default function Menu() {
         </View>
 
         {popular.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', gap: 8 }}>
+          <ScrollView horizontal style={{ flexGrow: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center', gap: 8 }}>
             <Txt size={11} weight={700} color="textSecondary" style={{ letterSpacing: 1.2 }}>
               MOST ORDERED
             </Txt>

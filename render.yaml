@@ -16,5 +16,9 @@ services:
         sync: false # paste your Neon connection string (keep ?sslmode=require)
       - key: JWT_SECRET
         generateValue: true
+      # The code the client types on the app's first screen to set up their restaurant on an empty
+      # database (Render makes a random one: read it under Environment and give it to the client).
+      - key: SETUP_CODE
+        generateValue: true
       - key: NODE_VERSION
         value: "22"

@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { Redirect, useIsFocused, useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme';
 import { useAuth } from '../../src/store/auth';
 import { ROLES, roleInfo, homeFor } from '../../src/lib/roles';
 import { useServer } from '../../src/lib/server';
+import { api } from '../../src/lib/api';
+import { ROLE_LABEL, ROLE_ICON } from '../../src/lib/roles';
+import { toast } from '../../src/store/toast';
 import { ServerSheet } from '../../src/components/ServerSheet';
 import { Screen } from '../../src/components/Screen';
 import { Txt } from '../../src/components/Txt';
@@ -20,10 +23,47 @@ export default function RoleSelect() {
   const [serverOpen, setServerOpen] = useState(false);
   const server = useServer((s) => s.url);
   const focused = useIsFocused();
+  const [dev, setDev] = useState(null); // developer mode: the people who can be signed in as with one tap
+  const [devBusy, setDevBusy] = useState(null);
+
+  // Developer mode exists only on a test server on the developer's own computer; everywhere else
+  // the server answers "off" and nothing extra is shown.
+  useEffect(() => {
+    let current = true;
+    setDev(null);
+    api('/auth/dev', { timeout: 6000 })
+      .then((r) => current && setDev(r.enabled ? r.users : null))
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [server]);
+
+  // A server with no restaurant yet (just handed over) opens the first-run set-up instead.
+  useEffect(() => {
+    let current = true;
+    api('/auth/setup', { timeout: 75000 })
+      .then((r) => current && r.needed && router.replace('/setup'))
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [server, router]);
+
+  const devSignIn = async (person) => {
+    setDevBusy(person.id);
+    try {
+      await useAuth.getState().devLogin(person.id);
+      toast(`Signed in as ${person.name}`);
+      router.replace(homeFor(person.role));
+    } catch (err) {
+      toast(err.message, { icon: 'alert-circle-outline', tone: 'error' });
+    } finally {
+      setDevBusy(null);
+    }
+  };
 
   // Someone already signed in who lands here (the back button, an old link) goes to their home.
-  // Only while this screen is the one in front: right after signing in it is still underneath the
-  // Customise screen, and must not pull the user away from it.
   if (user && focused) return <Redirect href={homeFor(user.role)} />;
 
   return (
@@ -103,6 +143,52 @@ export default function RoleSelect() {
           );
         })}
       </View>
+
+      {dev ? (
+        <View style={{ marginTop: 24, gap: 8, padding: t.d.pad, borderRadius: t.radius.card, borderWidth: t.borderWidth, borderColor: t.c.warning, backgroundColor: t.c.warningTint }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon name="bug-outline" size={18} color="warningText" />
+            <Txt size={14} weight={700} color="warningText" style={{ flex: 1 }}>
+              Developer mode
+            </Txt>
+          </View>
+          <Txt size={12} color="warningText">
+            Tap a person to sign in without a password. Only on this test server.
+          </Txt>
+          <View style={{ gap: 8, marginTop: 4 }}>
+            {dev.map((person) => (
+              <Pressable
+                key={person.id}
+                onPress={() => devSignIn(person)}
+                disabled={!!devBusy}
+                accessibilityRole="button"
+                accessibilityLabel={`Sign in as ${person.name}, ${ROLE_LABEL[person.role]}`}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  minHeight: 48,
+                  paddingHorizontal: 12,
+                  borderRadius: t.radius.control,
+                  borderWidth: t.borderWidth,
+                  borderColor: t.c.border,
+                  backgroundColor: pressed ? t.c.pressed : t.c.card,
+                  opacity: devBusy && devBusy !== person.id ? 0.5 : 1,
+                })}
+              >
+                <Icon name={ROLE_ICON[person.role]} size={20} color="textSecondary" />
+                <Txt size={15} weight={600} numberOfLines={1} style={{ flex: 1 }}>
+                  {person.name}
+                </Txt>
+                <Txt size={12} color="textSecondary">
+                  {ROLE_LABEL[person.role]} · {person.login_id}
+                </Txt>
+                <Icon name={devBusy === person.id ? 'loading' : 'chevron-right'} size={20} color="textSecondary" />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {/* Which server this device talks to. Small on purpose: it is set once, when the app is installed. */}
       <Pressable

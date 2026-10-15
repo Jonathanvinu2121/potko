@@ -7,11 +7,12 @@ import { newId, send } from '../lib/ws';
 const EMPTY = {
   type: null, // 'dine_in' | 'delivery' | 'takeaway'
   table: null, // { id, label } for dine-in
+  guests: null, // how many people sit at the table (dine-in)
   customerName: '',
   customerPhone: '',
   deliveryAddress: '',
   carNumber: '',
-  lines: [], // { key, itemId, name, code, veg, size, qty, unitPrice, customisations, note, allergyNote }
+  lines: [], // { key, itemId, name, code, veg, size, qty, unitPrice, openPrice?, customisations, addons, note, allergyNote }
   clientId: null, // one id per send, reused on retry so a double tap cannot send twice
   addTo: null, // { orderId, replacesItemId?, replacesName? } when adding to an existing order
 };
@@ -20,9 +21,11 @@ const EMPTY = {
 const sameDish = (a, b) =>
   a.itemId === b.itemId &&
   a.size === b.size &&
+  a.openPrice === b.openPrice &&
   a.note === b.note &&
   a.allergyNote === b.allergyNote &&
-  [...a.customisations].sort().join('|') === [...b.customisations].sort().join('|');
+  [...a.customisations].sort().join('|') === [...b.customisations].sort().join('|') &&
+  (a.addons || []).map((x) => `${x.group}:${x.name}`).sort().join('|') === (b.addons || []).map((x) => `${x.group}:${x.name}`).sort().join('|');
 
 // The server frees a locked table after 5 minutes without activity. While the waiter is adding
 // or changing dishes the lock is refreshed, at most once every 20 seconds.

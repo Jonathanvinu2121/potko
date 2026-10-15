@@ -17,7 +17,7 @@ const REASONS = [
 // The chef's "Deny items" sheet, in two steps.
 //   Step 1  "What can't you make?"  tick the dishes. Everything not ticked is accepted.
 //   Step 2  "Why?"                  one reason for all ticked dishes, plus an optional note.
-// items: the dishes that can still be denied (sent or accepted).
+// items: the dishes that can still be denied (new, or accepted and not started).
 // onSubmit({ itemIds, reason, note }) does the work; the sheet shows it as busy until it settles.
 export function DenySheet({ visible, items, onClose, onSubmit }) {
   const t = useTheme();

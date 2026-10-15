@@ -11,3 +11,8 @@ app/android/
 .gradle-home/
 .gradle-home-build.log
 release/
+brag-output/
+# downloaded helper programs and the temporary web build for sharing a test link
+.tools/
+# copies of the online database taken before it was emptied (never committed)
+backups/

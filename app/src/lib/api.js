@@ -8,6 +8,10 @@ export const setToken = (value) => {
   token = value;
 };
 
+// For things the app loads without api(): pictures, and files opened in the browser.
+export const authHeader = () => (token ? { Authorization: `Bearer ${token}` } : {});
+export const fileUrl = (path) => `${serverUrl()}${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
+
 // Called when the server says the saved login is no longer valid.
 export const setUnauthorizedHandler = (fn) => {
   onUnauthorized = fn;

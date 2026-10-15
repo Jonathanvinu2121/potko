@@ -9,6 +9,7 @@ import { useLive } from '../../src/store/live';
 import { on } from '../../src/lib/ws';
 import { toast } from '../../src/store/toast';
 import { isOpen, unavailableItems } from '../../src/lib/orders';
+import { approvalShort } from '../../src/lib/approvals';
 
 // Waiter: a bottom bar with exactly three tabs.
 export default function WaiterLayout() {
@@ -25,10 +26,10 @@ export default function WaiterLayout() {
     const stopDenied = on('chef.denied', ({ unavailable, reason }) =>
       toast(`Kitchen can’t make ${unavailable} ${unavailable === 1 ? 'item' : 'items'} · ${reason}`, { icon: 'alert-outline', tone: 'error', duration: 5000 })
     );
-    // The manager's answer to a cancel or discount request arrives the moment it is given.
+    // The manager's answer to a cancel, void, discount or refund request arrives the moment it is given.
     const stopDecided = on('approval.decided', (a) => {
-      const what = a.type === 'cancel' ? `Cancel of ${a.item_name}` : `${a.payload.pct}% discount`;
-      const why = a.payload.decision_reason ? ` · ${a.payload.decision_reason}` : '';
+      const what = approvalShort(a);
+      const why = a.decision_reason || a.payload?.decision_reason ? ` · ${a.decision_reason || a.payload.decision_reason}` : '';
       if (a.status === 'approved') toast(`${what} approved by ${a.decided_by_name}`, { tone: 'success', duration: 5000 });
       else toast(`${what} rejected by ${a.decided_by_name}${why}`, { icon: 'close-circle-outline', tone: 'error', duration: 5000 });
     });

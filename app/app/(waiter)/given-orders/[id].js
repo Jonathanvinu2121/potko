@@ -8,7 +8,8 @@ import { useDraft } from '../../../src/store/draft';
 import { useConnection, send } from '../../../src/lib/ws';
 import { toast } from '../../../src/store/toast';
 import { money, orderLabel } from '../../../src/lib/format';
-import { ITEM_STATUS, TYPE_LABEL, TYPE_ICON, allSettled, cancelRequested, isOpen, itemsWith } from '../../../src/lib/orders';
+import { ITEM_STATUS, TYPE_LABEL, TYPE_ICON, allSettled, cancelRequested, isOpen, itemsWith, onFloor } from '../../../src/lib/orders';
+import { usePrices, useSeesBills } from '../../../src/lib/prices';
 import { Screen } from '../../../src/components/Screen';
 import { AppHeader } from '../../../src/components/AppHeader';
 import { Txt } from '../../../src/components/Txt';
@@ -26,12 +27,14 @@ import { ReasonSheet } from '../../../src/components/ReasonSheet';
 const CANCEL_REASONS = ['Customer changed mind', 'Wrong item ordered', 'Waited too long', 'Customer left'];
 
 // W6 Order status: what the kitchen has done with each dish, and what the waiter can still do.
-//   Sent / Accepted   Edit, Remove
+//   Sent              Edit, Remove (until the kitchen starts preparing)
 //   Preparing         locked; cancelling needs the manager
 //   Ready             deliver
 //   Unavailable       Replace item or Remove
 export default function OrderStatus() {
   const t = useTheme();
+  const prices = usePrices();
+  const seesBills = useSeesBills();
   const router = useRouter();
   const id = Number(useLocalSearchParams().id);
   const order = useLive((s) => s.orders.find((o) => o.id === id));
@@ -50,7 +53,8 @@ export default function OrderStatus() {
     useMenu.getState().load();
   }, []);
 
-  if (!order || !isOpen(order)) {
+  // A paid table stays here until it is closed, so the waiter can still close or move it.
+  if (!order || !onFloor(order)) {
     return (
       <Screen scroll={false} edges={['top', 'left', 'right']} header={<AppHeader title="Order" back />}>
         {synced ? (
@@ -73,6 +77,7 @@ export default function OrderStatus() {
   const cancelled = itemsWith(order, 'cancelled');
   const settled = allSettled(order);
   const dineIn = order.type === 'dine_in';
+  const paidBill = !isOpen(order); // paid, guests still seated
 
   // Runs one action. The screen itself redraws from the server's order.updated event.
   const run = async (key, type, payload, done) => {
@@ -120,18 +125,29 @@ export default function OrderStatus() {
     const item = cancelling;
     try {
       await send('approval.request', { type: 'cancel', orderId: order.id, itemId: item.id, payload: { reason } });
-      toast('Cancel request sent to manager', { icon: 'shield-account-outline' });
+      toast(`${item.status === 'delivered' ? 'Void' : 'Cancel'} request sent to manager`, { icon: 'shield-account-outline' });
     } catch (err) {
       toast(err.message, { icon: 'alert-circle-outline', tone: 'error', duration: 4000 });
     }
     setCancelling(null);
   };
 
-  const closeTable = () =>
-    run('close', 'table.close', { orderId: order.id }, () => {
+  // The meal is over: the table shows "Bill requested", joins the payment queue, and the bill opens.
+  // (Someone who may not see bills only asks for it: the counter takes it from there.)
+  const askForBill = () =>
+    run('close', 'bill.request', { orderId: order.id }, () => {
       setClosing(false);
-      router.push(`/given-orders/bill/${order.id}`);
+      if (seesBills) router.push(`/given-orders/bill/${order.id}`);
+      else toast('Bill sent to the counter', { icon: 'receipt-text-outline', tone: 'success' });
     }).then(() => setClosing(false));
+  const openBill = () => (order.bill_requested_at ? (seesBills ? router.push(`/given-orders/bill/${order.id}`) : toast('The bill is with the counter', { icon: 'receipt-text-outline' })) : setClosing(true));
+
+  // The guests have left a paid table: free it.
+  const closePaidTable = () =>
+    run('close', 'order.close', { orderId: order.id }, () => {
+      toast(dineIn ? `${orderLabel(order)} closed and free again` : 'Order completed', { tone: 'success' });
+      router.back();
+    });
 
   // The saved dish, shaped like a draft line so the item sheet can open it filled in.
   const asLine = (item) => ({
@@ -139,6 +155,8 @@ export default function OrderStatus() {
     size: item.size,
     qty: item.qty,
     customisations: item.customisations,
+    addons: item.addons || [],
+    addonsTotal: (item.addons || []).reduce((sum, a) => sum + (Number(a.price) || 0), 0),
     note: item.note || '',
     allergyNote: item.allergy_note || '',
   });
@@ -154,13 +172,13 @@ export default function OrderStatus() {
           name={item.name_snapshot}
           veg={item.veg}
           size={item.size}
-          customisations={item.customisations}
+          customisations={[...(item.addons || []).map((a) => a.name), ...item.customisations]}
           note={item.note}
           allergyNote={item.allergy_note}
           done={item.status === 'cancelled'}
           right={
             <Txt size={16} weight={700} tabular color={item.status === 'unavailable' || item.status === 'cancelled' ? 'textSecondary' : 'text'}>
-              {money(item.qty * item.unit_price)}
+              {prices.show ? money(item.qty * item.unit_price) : ''}
             </Txt>
           }
         />
@@ -172,23 +190,23 @@ export default function OrderStatus() {
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <Chip label={status.label} icon={status.icon} tone={status.tone} />
           <View style={{ flex: 1 }} />
-          {item.status === 'sent' || item.status === 'accepted' ? (
+          {paidBill ? null : item.status === 'sent' || item.status === 'accepted' ? (
             <>
               <Button title="Edit" variant="secondary" loading={working} disabled={!!busy || !online} onPress={() => setEditing(item)} />
               <Button title="Remove" variant="secondary" disabled={!!busy || !online} onPress={() => setRemoving(item)} />
             </>
           ) : null}
-          {item.status === 'unavailable' ? (
+          {!paidBill && item.status === 'unavailable' ? (
             <>
               <Button title="Replace item" variant="secondary" disabled={!!busy || !online} onPress={() => addMore(item)} />
               <Button title="Remove" variant="secondary" disabled={!!busy || !online} onPress={() => setRemoving(item)} />
             </>
           ) : null}
-          {['preparing', 'ready', 'delivered'].includes(item.status) ? (
+          {!paidBill && ['preparing', 'ready', 'delivered'].includes(item.status) ? (
             asked ? (
-              <Chip label="Cancel requested · waiting for manager" icon="shield-account-outline" tone="warning" />
+              <Chip label={`${item.status === 'delivered' ? 'Void' : 'Cancel'} requested · waiting for manager`} icon="shield-account-outline" tone="warning" />
             ) : (
-              <Button title="Request cancel (needs manager)" variant="link" disabled={!!busy || !online} onPress={() => setCancelling(item)} />
+              <Button title={`Request ${item.status === 'delivered' ? 'void' : 'cancel'} (needs manager)`} variant="link" disabled={!!busy || !online} onPress={() => setCancelling(item)} />
             )
           ) : null}
         </View>
@@ -224,14 +242,21 @@ export default function OrderStatus() {
               Not connected. Buttons work again as soon as the connection is back.
             </Txt>
           ) : null}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button title="Add more items" variant="secondary" disabled={!!busy || !online} onPress={() => addMore()} style={{ flex: 1 }} />
-            {ready.length > 0 ? (
-              <Button title={`Deliver ready (${ready.length})`} loading={busy === 'deliver'} disabled={!online} onPress={deliver} style={{ flex: 1.2 }} />
-            ) : settled ? (
-              <Button title={dineIn ? 'Close table' : 'Complete order'} disabled={!!busy || !online} onPress={() => setClosing(true)} style={{ flex: 1.2 }} />
-            ) : null}
-          </View>
+          {paidBill ? (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button title="View Bill" icon="receipt-text-outline" variant="secondary" disabled={!!busy} onPress={() => router.push(`/given-orders/bill/${order.id}`)} style={{ flex: 1 }} />
+              <Button title={dineIn ? 'Close Table' : 'Complete Order'} icon="check-circle-outline" loading={busy === 'close'} disabled={!online} onPress={closePaidTable} style={{ flex: 1.2 }} />
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button title="Add Items" icon="plus-circle-outline" variant="secondary" disabled={!!busy || !online} onPress={() => addMore()} style={{ flex: 1 }} />
+              {ready.length > 0 ? (
+                <Button title={`Deliver ready (${ready.length})`} loading={busy === 'deliver'} disabled={!online} onPress={deliver} style={{ flex: 1.2 }} />
+              ) : settled ? (
+                <Button title={seesBills ? 'Bill & Payment' : order.bill_requested_at ? 'Bill at counter' : 'Send bill to counter'} icon="receipt-text-outline" disabled={!!busy || !online} onPress={openBill} style={{ flex: 1.2 }} />
+              ) : null}
+            </View>
+          )}
         </View>
       }
     >
@@ -252,9 +277,9 @@ export default function OrderStatus() {
         ) : null}
         {settled && delivered.length > 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: t.radius.control, backgroundColor: t.c.successTint }}>
-            <Icon name="check-all" color="successText" />
-            <Txt weight={700} color="successText">
-              All items delivered
+            <Icon name={paidBill ? 'cash-check' : 'check-all'} color="successText" />
+            <Txt weight={700} color="successText" style={{ flex: 1 }}>
+              {paidBill ? `${prices.withPrice('Bill paid', order.total)}. Close the table when the guests leave${dineIn ? ', or move them from the Tables screen' : ''}.` : order.bill_requested_at ? 'All items delivered · bill requested' : 'All items delivered'}
             </Txt>
           </View>
         ) : null}
@@ -262,7 +287,7 @@ export default function OrderStatus() {
         {group('Unavailable', unavailable)}
         {group('Ready', ready)}
         {group('Preparing', preparing)}
-        {group('Accepted / Sent', waiting)}
+        {group('Sent to kitchen', waiting)}
 
         {delivered.length + cancelled.length > 0 ? (
           <View style={{ gap: 8 }}>
@@ -307,17 +332,17 @@ export default function OrderStatus() {
       />
       <ConfirmSheet
         visible={closing}
-        title={dineIn ? `Close ${orderLabel(order)}?` : 'Complete this order?'}
-        text="Next comes the bill and payment. You can still add more items from there."
-        confirmLabel={dineIn ? 'Close table' : 'Complete order'}
+        title={`Get the bill for ${orderLabel(order)}?`}
+        text={dineIn ? 'The table shows "Bill requested" and the bill joins the payment queue. More items can still be added until it is paid.' : 'The bill joins the payment queue. More items can still be added until it is paid.'}
+        confirmLabel="Get the Bill"
         busy={busy === 'close'}
-        onConfirm={closeTable}
+        onConfirm={askForBill}
         onClose={() => setClosing(false)}
       />
       <ReasonSheet
         visible={!!cancelling}
-        title={cancelling ? `Cancel ${cancelling.qty}× ${cancelling.name_snapshot}?` : ''}
-        text="The kitchen has started this dish, so a manager has to approve. Say why."
+        title={cancelling ? `${cancelling.status === 'delivered' ? 'Void' : 'Cancel'} ${cancelling.qty}× ${cancelling.name_snapshot}?` : ''}
+        text={cancelling?.status === 'delivered' ? 'This dish was already served, so taking it off the bill needs a manager. Say why.' : 'The kitchen has started this dish, so a manager has to approve. Say why.'}
         reasons={CANCEL_REASONS}
         onSubmit={requestCancel}
         onClose={() => setCancelling(null)}

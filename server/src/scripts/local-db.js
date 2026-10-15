@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { PGlite } = require('@electric-sql/pglite');
 const { PGLiteSocketServer } = require('@electric-sql/pglite-socket');
+const { migrate } = require('../migrate');
 
 const PORT = 5433;
 const dataDir = path.join(__dirname, '..', '..', '.pgdata');
@@ -17,6 +18,7 @@ async function main() {
   const { rows } = await db.query("SELECT to_regclass('public.users') AS users");
   if (!rows[0].users) {
     await db.exec(sql('schema.sql'));
+    await migrate({ run: (text) => db.exec(text), rows: async (text) => (await db.query(text)).rows });
     await db.exec(sql('seed.sql'));
     console.log('Created the tables and loaded the seed data');
   }
