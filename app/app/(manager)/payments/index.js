@@ -110,7 +110,7 @@ export default function Payments() {
                       <Txt size={18} weight={700} numberOfLines={1}>
                         {order.type === 'dine_in' ? order.table_label : orderLabel(order)}
                       </Txt>
-                      <Txt size={13} color="textSecondary" numberOfLines={1}>
+                      <Txt size={13} color="textSecondary" numberOfLines={2}>
                         {[order.guests ? plural(order.guests, 'Guest') : null, order.area_name, order.waiter_name].filter(Boolean).join(' · ')}
                       </Txt>
                       <Txt size={12} color="textSecondary" tabular numberOfLines={1}>

@@ -114,7 +114,7 @@ export default function AddItems() {
           </Card>
         ) : null}
 
-        <SearchField value={query} onChangeText={setQuery} placeholder="Search by name or code" />
+        <SearchField value={query} onChangeText={setQuery} placeholder="Search by name or Item ID" />
         {text ? null : (
           <ScrollView horizontal style={{ flexGrow: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
             <Chip label="All" selected={categoryId === null} onPress={() => setCategoryId(null)} />

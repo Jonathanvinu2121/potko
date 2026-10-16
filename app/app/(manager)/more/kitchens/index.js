@@ -104,7 +104,7 @@ export default function Kitchens() {
                     <Txt size={17} weight={700} numberOfLines={1}>
                       {terminal.name}
                     </Txt>
-                    <Txt size={13} color="textSecondary" numberOfLines={1}>
+                    <Txt size={13} color="textSecondary" numberOfLines={2}>
                       {terminal.is_default ? 'Cooks every dish not given to another kitchen' : terminal.active ? 'Cooks only the dishes given to it' : 'Switched off'}
                     </Txt>
                   </View>
@@ -174,7 +174,7 @@ export default function Kitchens() {
                 <Check
                   key={chef.id}
                   label={chef.name}
-                  sub={others.length ? `Also at ${others.join(', ')}` : 'No other terminal'}
+                  sub={others.length ? `Also at ${others.join(', ')}` : 'No other kitchen'}
                   checked={!!assign?.ids.includes(chef.id)}
                   onChange={(on) => setAssign((a) => ({ ...a, ids: on ? [...a.ids, chef.id] : a.ids.filter((x) => x !== chef.id) }))}
                 />
@@ -190,8 +190,8 @@ export default function Kitchens() {
         onClose={() => setMenu(null)}
         actions={menu ? [
           { icon: 'pencil-outline', title: 'Rename', onPress: () => setForm({ id: menu.id, name: menu.name }) },
-          menu.is_default ? null : { icon: 'star-outline', title: 'Make Default', subtitle: 'Dishes without their own terminal will come here', onPress: () => change(menu, { is_default: true }, `${menu.name} is now the default terminal`) },
-          menu.is_default ? null : { icon: menu.active ? 'eye-off-outline' : 'eye-outline', title: menu.active ? 'Switch Off' : 'Switch On', subtitle: menu.active ? 'Its dishes go to the default terminal meanwhile' : undefined, onPress: () => change(menu, { active: !menu.active }, menu.active ? `${menu.name} switched off` : `${menu.name} switched on`) },
+          menu.is_default ? null : { icon: 'star-outline', title: 'Make Default', subtitle: 'Dishes without their own kitchen will come here', onPress: () => change(menu, { is_default: true }, `${menu.name} is now the default kitchen`) },
+          menu.is_default ? null : { icon: menu.active ? 'eye-off-outline' : 'eye-outline', title: menu.active ? 'Switch Off' : 'Switch On', subtitle: menu.active ? 'Its dishes go to the default kitchen meanwhile' : undefined, onPress: () => change(menu, { active: !menu.active }, menu.active ? `${menu.name} switched off` : `${menu.name} switched on`) },
           menu.is_default ? null : { icon: 'trash-can-outline', title: 'Delete', destructive: true, onPress: () => remove(menu) },
         ].filter(Boolean) : []}
       />

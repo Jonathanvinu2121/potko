@@ -15,11 +15,16 @@ export function Bars({ data, format = (v) => String(v), height = 130, tone = 'pr
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: wide ? 6 : 8, height: height + 38, minWidth: '100%' }}>
       {data.map((d, i) => {
         const h = d.value > 0 ? Math.max(4, Math.round((d.value / max) * height)) : 2;
+        // The peak's value may be wider than its bar: it spills over the neighbours (whose labels are
+        // blank), and at either end of the chart it grows inwards so nothing is cut off.
+        const edge = i === 0 ? 'flex-start' : i === data.length - 1 ? 'flex-end' : 'center';
         return (
           <View key={`${d.label}-${i}`} accessibilityLabel={`${d.hint ?? d.label}: ${format(d.value)}`} style={{ flex: wide ? undefined : 1, width: barWidth, alignItems: 'center', gap: 4 }}>
-            <Txt size={10} weight={700} color={i === peak && d.value > 0 ? 'text' : 'card'} numberOfLines={1} tabular>
-              {i === peak && d.value > 0 ? format(d.value) : ' '}
-            </Txt>
+            <View style={{ width: 84, alignSelf: edge, alignItems: edge }}>
+              <Txt size={10} weight={700} color={i === peak && d.value > 0 ? 'text' : 'card'} numberOfLines={1} tabular>
+                {i === peak && d.value > 0 ? format(d.value) : ' '}
+              </Txt>
+            </View>
             <View style={{ width: '100%', maxWidth: 34, height: h, borderRadius: 5, backgroundColor: d.value > 0 ? t.c[i === peak ? tone : `${tone}Tint`] ?? t.c.primaryTint : t.c.border }} />
             <Txt size={10} color="textSecondary" numberOfLines={1} tabular>
               {d.label}

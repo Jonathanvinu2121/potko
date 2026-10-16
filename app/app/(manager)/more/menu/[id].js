@@ -92,7 +92,7 @@ export default function CategoryItems() {
   };
 
   return (
-    <Screen header={<AppHeader title={category?.name ?? 'Category'} subtitle={category ? `${plural(mine.length, 'item')} · ${category.active ? 'Active' : 'Inactive'}` : undefined} back />}>
+    <Screen header={<AppHeader title={category?.name ?? 'Category'} subtitle={category ? [plural(mine.length, 'item'), category.active ? 'Active' : 'Inactive', category.code].filter(Boolean).join(' · ') : undefined} back />}>
       <View style={{ gap: 12 }}>
         <SearchField value={query} onChangeText={setQuery} placeholder="Search items" />
         <Button title="Add" icon="plus" onPress={() => setAdding(true)} />
@@ -122,9 +122,11 @@ export default function CategoryItems() {
                 >
                   <Picture imageId={item.image_id} icon="food-outline" size={48} />
                   <View style={{ flex: 1, gap: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <VegMark veg={item.veg} size={14} />
-                      <Txt size={15} weight={700} numberOfLines={1} style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                      <View style={{ paddingTop: 3 }}>
+                        <VegMark veg={item.veg} size={14} />
+                      </View>
+                      <Txt size={15} weight={700} numberOfLines={2} style={{ flex: 1 }}>
                         {item.name}
                       </Txt>
                     </View>
@@ -158,7 +160,7 @@ export default function CategoryItems() {
         onClose={() => setAdding(false)}
         actions={[
           { icon: 'silverware-fork-knife', title: 'Add Manually', subtitle: 'Create an item, one at a time', onPress: () => router.push(`/more/menu/item?category=${id}`) },
-          { icon: 'tray-arrow-up', title: 'Import from File', subtitle: 'Many items at once, from Excel or CSV', onPress: () => router.push('/more/menu/import?kind=items') },
+          { icon: 'tray-arrow-up', title: 'Import from File', subtitle: 'Categories and dishes, from one Excel or CSV file', onPress: () => router.push('/more/menu/import?kind=items') },
         ]}
       />
       <ConfirmSheet

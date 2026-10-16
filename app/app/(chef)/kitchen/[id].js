@@ -47,7 +47,7 @@ export default function KitchenOrder() {
     return (
       <Screen scroll={false} header={<AppHeader title="Order" back />}>
         {synced ? (
-          <EmptyState icon="receipt-text-remove-outline" title="Nothing here for your kitchen" text="The order was closed, or none of its dishes are cooked at your terminal. Go back to the board." />
+          <EmptyState icon="receipt-text-remove-outline" title="Nothing here for your kitchen" text="The order was closed, or none of its dishes are cooked at your kitchen. Go back to the board." />
         ) : (
           <View style={{ gap: 12, paddingTop: 16 }}>
             <Skeleton height={48} />

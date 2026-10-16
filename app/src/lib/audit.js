@@ -10,9 +10,9 @@ const because = (e, text = e.reason || e.new?.reason) => (text ? `: ${text}` : '
 const table = (label) => (label ? `table ${label}` : 'a table');
 
 const CHANGED = {
-  name: 'name', login_id: 'login ID', role: 'role', active: 'active or inactive', discount_limit_pct: 'discount limit', password: 'password',
+  name: 'name', login_id: 'Staff ID', role: 'role', active: 'active or inactive', discount_limit_pct: 'discount limit', password: 'password',
   pin: 'PIN', phone: 'phone', email: 'email', image_id: 'photo', access: 'areas and tables', can_collect_payment: 'payment permission',
-  permissions: 'permissions', terminals: 'kitchen terminals',
+  permissions: 'permissions', terminals: 'kitchens',
 };
 const fields = (changes = {}) => Object.keys(changes).map((k) => CHANGED[k] ?? k.replace(/_/g, ' ')).join(', ');
 
@@ -78,10 +78,10 @@ const WORDS = {
   'table.edit': (e) => `Edited ${table(e.new?.label ?? e.old?.label)}`,
   'table.delete': (e) => `Deleted ${table(e.old?.label)}`,
   'layout.edit': (e) => `Rearranged the layout of ${e.new?.area ?? 'an area'}`,
-  'terminal.add': (e) => `Added kitchen terminal ${e.new?.name}`,
-  'terminal.edit': (e) => `Changed kitchen terminal ${e.old?.name ?? ''}`.trim(),
-  'terminal.chefs': (e) => `Set the chefs at ${e.new?.terminal ?? 'a kitchen terminal'}: ${(e.new?.chefs || []).join(', ') || 'nobody'}`,
-  'terminal.delete': (e) => `Deleted kitchen terminal ${e.old?.name ?? ''}`.trim(),
+  'terminal.add': (e) => `Added kitchen ${e.new?.name}`,
+  'terminal.edit': (e) => `Changed kitchen ${e.old?.name ?? ''}`.trim(),
+  'terminal.chefs': (e) => `Set the chefs at ${e.new?.terminal ?? 'a kitchen'}: ${(e.new?.chefs || []).join(', ') || 'nobody'}`,
+  'terminal.delete': (e) => `Deleted kitchen ${e.old?.name ?? ''}`.trim(),
 
   'user.add': (e) => `Added ${e.new?.name} (${ROLE_LABEL[e.new?.role] ?? e.new?.role}, ${e.new?.login_id})`,
   'user.edit': (e) => `Changed ${fields(e.new) || 'the account'}`,
@@ -120,7 +120,7 @@ export function accountEvent(entry) {
     if (n.active === false) return { title: 'Account deactivated', tone: 'error' };
     if (n.active === true) return { title: 'Account activated', tone: 'success' };
     if (n.role) return { title: `Role changed to ${ROLE_LABEL[n.role] ?? n.role}`, tone: 'primary' };
-    if (n.terminals) return { title: 'Kitchen terminals updated', tone: 'primary' };
+    if (n.terminals) return { title: 'Kitchens updated', tone: 'primary' };
     if (n.access || n.can_collect_payment !== undefined) return { title: 'Table access updated', tone: 'primary' };
     if (n.permissions) return { title: 'Permissions updated', tone: 'primary' };
     return { title: `Profile updated (${fields(n)})`, tone: 'primary' };

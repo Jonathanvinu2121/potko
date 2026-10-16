@@ -46,7 +46,7 @@ function readContact(body, out) {
   }
   if (body.image_id !== undefined) out.image_id = Number.isInteger(body.image_id) ? body.image_id : null;
 }
-const taken = (err) => (err.code === '23505' ? new AppError(409, 'id_taken', 'Another person already uses that login ID') : err);
+const taken = (err) => (err.code === '23505' ? new AppError(409, 'id_taken', 'Another person already uses that Staff ID') : err);
 
 // A waiter's areas and tables, checked against what the restaurant really has.
 //   { areas: { "<areaId>": { mode: 'all' } | { mode: 'tables', tables: [ids], from?, to? } } }
@@ -76,7 +76,7 @@ async function readAccess(restaurantId, input) {
 
 async function readTerminals(restaurantId, input) {
   const ids = [...new Set((Array.isArray(input) ? input : []).map(Number))].filter(Number.isInteger);
-  if (ids.length === 0) throw bad('Assign the chef to at least one kitchen terminal');
+  if (ids.length === 0) throw bad('Assign the chef to at least one kitchen');
   const { rows } = await db.query('SELECT id FROM kitchen_terminals WHERE restaurant_id = $1 AND id = ANY($2::int[])', [restaurantId, ids]);
   if (rows.length !== ids.length) throw bad('One of the chosen terminals no longer exists');
   return ids;
@@ -103,7 +103,7 @@ async function assignments(restaurantId) {
     terminals,
     tables,
     summary(user) {
-      if (user.role === 'chef') return (user.terminals || []).map((id) => terminals.find((t) => t.id === id)?.name).filter(Boolean).join(', ') || 'No terminal assigned';
+      if (user.role === 'chef') return terminals.filter((t) => (user.terminals || []).includes(t.id)).map((t) => t.name).join(', ') || 'No kitchen assigned';
       if (user.role === 'cashier') return 'Billing & payments';
       if (user.role !== 'waiter') return 'All floors';
       const rules = user.access?.areas;
@@ -274,7 +274,7 @@ router.post('/', manage, async (req, res) => {
   const name = text(body.name, 60);
   const loginId = text(body.login_id, 60);
   if (!name) throw bad('Enter a name');
-  if (!/^[A-Za-z0-9._@+-]{3,60}$/.test(loginId)) throw bad('A login ID is 3 to 60 letters, digits, dots or dashes. An email address works too.');
+  if (!/^[A-Za-z0-9._@+-]{3,60}$/.test(loginId)) throw bad('A Staff ID is 3 to 60 letters, digits, dots or dashes. An email address works too.');
   if (!ROLES.includes(body.role)) throw bad('Choose a role');
   checkAuthority(req, body.role, body);
 
@@ -327,7 +327,7 @@ router.patch('/:id', manage, async (req, res) => {
   if (body.name !== undefined) { set.name = text(body.name, 60); if (!set.name) throw bad('Enter a name'); changes.name = set.name; }
   if (body.login_id !== undefined && text(body.login_id, 60) !== before.login_id) {
     set.login_id = text(body.login_id, 60);
-    if (!/^[A-Za-z0-9._@+-]{3,60}$/.test(set.login_id)) throw bad('A login ID is 3 to 60 letters, digits, dots or dashes');
+    if (!/^[A-Za-z0-9._@+-]{3,60}$/.test(set.login_id)) throw bad('A Staff ID is 3 to 60 letters, digits, dots or dashes');
     changes.login_id = set.login_id;
   }
   if (role !== before.role) { set.role = role; changes.role = role; }

@@ -90,11 +90,12 @@ async function readFile(filename, base64) {
 
 // field -> { label, required for which kind, other headings people use for it }
 const FIELDS = {
+  category_code: { label: 'Category ID', also: ['category id', 'category code', 'cat id', 'category_id'] },
   category_name: { label: 'Category name', also: ['category', 'category name', 'cat', 'menu category'] },
   category_description: { label: 'Category description', also: ['category description'] },
   category_display_order: { label: 'Category display order', also: ['category order', 'category display order'] },
   category_active: { label: 'Category active', also: ['category status', 'category active'] },
-  item_code: { label: 'Item code', also: ['sku', 'code', 'item code', 'item sku', 'item_code / sku', 'item id'] },
+  item_code: { label: 'Item ID', also: ['sku', 'code', 'item code', 'item sku', 'item_code / sku', 'item id', 'id'] },
   item_name: { label: 'Item name', also: ['item', 'name', 'item name', 'dish', 'dish name', 'product'] },
   item_description: { label: 'Item description', also: ['description', 'item description', 'details'] },
   item_image_url: { label: 'Item image URL', also: ['image', 'image url', 'item image', 'photo'] },
@@ -115,10 +116,10 @@ const FIELDS = {
   addon_max_select: { label: 'Add-on maximum', also: ['addon max select', 'max select', 'addon max', 'max'] },
   addons: { label: 'Add-ons and prices', also: ['add-ons', 'addons', 'add ons', 'modifiers', 'extras', 'add-ons and prices', 'addons and prices'] },
   kitchen_terminal: { label: 'Kitchen terminals', also: ['terminal', 'kitchen', 'kitchen terminal', 'counter', 'station', 'kot terminal', 'kitchen terminals', 'terminals', 'kitchens'] },
-  suggestions: { label: 'Go well with (item codes)', also: ['suggested item codes', 'suggested item ids', 'suggested items', 'go well with', 'goes well with', 'suggestions'] },
+  suggestions: { label: 'Go well with (item IDs)', also: ['suggested item ids', 'suggested item codes', 'suggested items', 'go well with', 'goes well with', 'suggestions'] },
   notes: { label: 'Notes', also: ['note', 'notes', 'remarks', 'comment'] },
 };
-const CATEGORY_FIELDS = ['category_name', 'category_description', 'category_display_order', 'category_active'];
+const CATEGORY_FIELDS = ['category_code', 'category_name', 'category_description', 'category_display_order', 'category_active'];
 const REQUIRED = { categories: ['category_name'], items: ['item_name', 'category_name'] };
 
 const norm = (s) => String(s).toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[*()?]/g, ' ').replace(/[_\s]+/g, ' ').trim();
@@ -217,11 +218,14 @@ function buildCategories(objects) {
   const byName = new Map();
   for (const o of objects) {
     const name = String(o.category_name || '').trim().slice(0, 40);
+    const code = String(o.category_code || '').trim().toUpperCase().slice(0, 13);
     if (!name && CATEGORY_FIELDS.every((f) => !o[f])) continue;
-    const key = sameKey(name);
-    const rec = byName.get(key) || { rows: [], name, description: null, position: null, active: null, errors: [], warnings: [] };
+    const key = code ? `code:${code}` : `name:${sameKey(name)}`;
+    const rec = byName.get(key) || { rows: [], name, code: code || null, description: null, position: null, active: null, errors: [], warnings: [] };
     rec.rows.push(o._row);
     if (!name) rec.errors.push('Category name is missing');
+    else if (rec.name && sameKey(rec.name) !== sameKey(name) && !rec.errors.some((e) => e.includes('two names'))) rec.errors.push(`Category ID ${code} is used with two names ("${rec.name}" and "${name}")`);
+    if (code && !/^[A-Z0-9-]{2,12}$/.test(code) && !rec.errors.some((e) => e.includes('Category ID "'))) rec.errors.push(`Category ID "${code}" should be 2 to 12 letters, digits or hyphens`);
     if (o.category_description) rec.description = String(o.category_description).slice(0, 120);
     if (o.category_display_order) {
       const n = Number(o.category_display_order);
@@ -233,7 +237,7 @@ function buildCategories(objects) {
       if (b === undefined) rec.errors.push(`Active "${o.category_active}" should be TRUE or FALSE`);
       else if (b !== null) rec.active = b;
     }
-    byName.set(key || `row-${o._row}`, rec);
+    byName.set(name || code ? key : `row-${o._row}`, rec);
   }
   return [...byName.values()];
 }
@@ -246,12 +250,13 @@ function buildItems(objects) {
     const name = String(o.item_name || '').trim().slice(0, 80);
     const code = String(o.item_code || '').trim().toUpperCase().slice(0, 13);
     const category = String(o.category_name || '').trim().slice(0, 40);
+    const categoryCode = String(o.category_code || '').trim().toUpperCase().slice(0, 13);
     if (!name && !code && !o.portion_price && !o.addon_name) continue; // a category-only row
     const key = code ? `code:${code}` : `name:${sameKey(category)}|${sameKey(name)}`;
     let rec = byKey.get(key);
     if (!rec) {
       rec = {
-        rows: [], code: code || null, name, category, description: null, veg: null, sizes: [], price: null, groups: [], open_price: null,
+        rows: [], code: code || null, name, category, category_code: categoryCode || null, description: null, veg: null, sizes: [], price: null, groups: [], open_price: null,
         tax_rate: null, tax_mode: null, tax_kind: null, terminals: [], suggestions: null, position: null, active: null, image_url: null, errors: [], warnings: [],
       };
       byKey.set(key, rec);
@@ -259,11 +264,11 @@ function buildItems(objects) {
     rec.rows.push(o._row);
     const at = `Row ${o._row}: `;
     if (!name) rec.errors.push(`${at}item name is missing`);
-    else if (rec.name && sameKey(rec.name) !== sameKey(name)) rec.warnings.push(`${at}code ${code} is used with two names ("${rec.name}" and "${name}"); the first is kept`);
+    else if (rec.name && sameKey(rec.name) !== sameKey(name)) rec.warnings.push(`${at}Item ID ${code} is used with two names ("${rec.name}" and "${name}"); the first is kept`);
     if (!rec.name) rec.name = name;
     if (!category && !rec.category) rec.errors.push(`${at}category is missing`);
     if (category && !rec.category) rec.category = category;
-    if (code && !/^[A-Z0-9-]{2,12}$/.test(code)) rec.errors.push(`${at}item code "${code}" should be 2 to 12 letters, digits or hyphens`);
+    if (code && !/^[A-Z0-9-]{2,12}$/.test(code)) rec.errors.push(`${at}Item ID "${code}" should be 2 to 12 letters, digits or hyphens`);
 
     if (o.item_description) rec.description = String(o.item_description).slice(0, 200);
     if (o.item_image_url) rec.image_url = String(o.item_image_url).slice(0, 300);
@@ -312,7 +317,7 @@ function buildItems(objects) {
       if (Number.isNaN(price)) problems.push(`price "${o.portion_price}" is not a number`);
       else if (price < 0) problems.push(`price ${o.portion_price} is negative`);
       else if (portion) rec.sizes.push({ label: portion, price });
-      else if (rec.price === null) rec.price = price;
+      else if (rec.price === null) { rec.price = price; rec.base_given = true; }
     } else if (portion) problems.push(`portion "${portion}" has no price`);
 
     // Add-ons: one per row with its group and rules, or a compact list.
@@ -371,8 +376,12 @@ function buildItems(objects) {
       rec.sizes = [];
       rec.price = 0;
     }
+    // One portion is no choice at all: it is simply the dish's price.
+    if (rec.sizes.length === 1) { rec.price = rec.sizes[0].price; rec.sizes = []; }
     if (rec.sizes.length === 0 && rec.price === null && rec.errors.length === 0) rec.errors.push(`Row ${rec.rows[0]}: price is missing`);
-    if (rec.sizes.length > 0) rec.price = rec.sizes[rec.sizes.length - 1].price;
+    // With portions, the base price given in the file stays (else the first portion's).
+    if (rec.sizes.length > 0 && !rec.base_given) rec.price = rec.sizes[0].price;
+    delete rec.base_given;
     if (rec.code && rec.suggestions) rec.suggestions = rec.suggestions.filter((c) => c !== rec.code);
     if (rec.image_url) rec.warnings.push('Picture links are not downloaded. Add the picture on the item in the app.');
   }
@@ -408,10 +417,10 @@ function buildRecords(sheets, kind, chosen) {
       headers,
       mapping,
       missing,
-      // Every category named in the file comes along (new ones are created). A categories import
-      // reads only the category columns, even from the full menu file.
+      // One import for the whole menu: the categories named in the file (new ones are created) and,
+      // when the file has dishes, the dishes. Add Category and "+ Add" open the same import.
       categories: buildCategories(objects),
-      items: kind === 'items' && hasItems ? buildItems(objects) : [],
+      items: hasItems ? buildItems(objects) : [],
       declaredCategories: true,
     };
   }
@@ -450,38 +459,49 @@ function buildRecords(sheets, kind, chosen) {
 // update lists what would change.
 function classify(records, existing, kind) {
   const catByName = new Map(existing.categories.map((c) => [sameKey(c.name), c]));
-  const incoming = new Set(records.categories.filter((c) => c.errors.length === 0).map((c) => sameKey(c.name)));
+  const catByCode = new Map(existing.categories.filter((c) => c.code).map((c) => [sameKey(c.code), c]));
+  const findCategory = (code, name) => (code && catByCode.get(sameKey(code))) || (name && catByName.get(sameKey(name))) || null;
+  const incoming = new Set(records.categories.filter((c) => c.errors.length === 0).flatMap((c) => [sameKey(c.name), c.code ? `code:${sameKey(c.code)}` : null]).filter(Boolean));
   const termByName = new Map(existing.terminals.map((t) => [sameKey(t.name), t]));
+  // Kitchens named in the file that the restaurant does not have yet are created with it.
+  records.new_kitchens = [];
   const itemByCode = new Map(existing.items.map((i) => [sameKey(i.code), i]));
   const itemByName = new Map(existing.items.map((i) => [`${i.category_id}|${sameKey(i.name)}`, i]));
   // Codes a "go well with" list may point at: on the menu already, or in this file.
   const knownCodes = new Set([...existing.items.map((i) => sameKey(i.code)), ...records.items.filter((i) => i.code).map((i) => sameKey(i.code))]);
 
   for (const c of records.categories) {
-    const match = catByName.get(sameKey(c.name));
+    const match = findCategory(c.code, c.name);
     c.match_id = match?.id ?? null;
     c.changes = [];
     if (match) {
+      if (c.name && c.name !== match.name) c.changes.push({ field: 'Name', old: match.name, new: c.name });
+      if (c.code && sameKey(c.code) !== sameKey(match.code || '')) c.changes.push({ field: 'Category ID', old: match.code || '', new: c.code });
       if (c.description !== null && c.description !== (match.description || '')) c.changes.push({ field: 'Description', old: match.description || '', new: c.description });
       if (c.active !== null && c.active !== match.active) c.changes.push({ field: 'Active', old: match.active ? 'Yes' : 'No', new: c.active ? 'Yes' : 'No' });
       if (c.position !== null && c.position !== match.sort) c.changes.push({ field: 'Display order', old: String(match.sort), new: String(c.position) });
     }
     c.status = c.errors.length ? 'error' : match ? 'update' : 'new';
   }
-  if (kind === 'items') records.categories = records.categories.filter((c) => !(c.status === 'update' && c.changes.length === 0));
+  // A category already on the menu with nothing to change is not shown (every dish row names one).
+  records.categories = records.categories.filter((c) => !(c.status === 'update' && c.changes.length === 0));
 
   for (const item of records.items) {
-    const category = catByName.get(sameKey(item.category));
+    const category = findCategory(item.category_code, item.category);
     // The category must be on the menu already, or come in the same file as a category of its own.
-    const comes = incoming.has(sameKey(item.category)) && records.declaredCategories;
+    const comes = (incoming.has(sameKey(item.category)) || (item.category_code && incoming.has(`code:${sameKey(item.category_code)}`))) && records.declaredCategories;
     if (item.category && !category && !comes && !(kind === 'categories')) {
       item.errors.push(`Category "${item.category}" does not exist. Add it first, or include it in a Categories sheet.`);
     }
     item.terminal_ids = [];
+    item.new_kitchens = [];
     for (const name of item.terminals || []) {
       const terminal = termByName.get(sameKey(name));
-      if (!terminal) item.errors.push(`Kitchen terminal "${name}" does not exist. Leave it empty to use the default terminal.`);
-      else item.terminal_ids.push(terminal.id);
+      if (terminal) item.terminal_ids.push(terminal.id);
+      else {
+        item.new_kitchens.push(name.slice(0, 40));
+        if (!records.new_kitchens.some((k) => sameKey(k) === sameKey(name))) records.new_kitchens.push(name.slice(0, 40));
+      }
     }
     item.terminal_id = item.terminal_ids[0] ?? null;
     for (const code of item.suggestions || []) {
@@ -503,11 +523,13 @@ function classify(records, existing, kind) {
       if (item.groups.length && JSON.stringify(item.groups) !== JSON.stringify(match.modifier_groups || [])) item.changes.push({ field: 'Add-ons', old: `${(match.modifier_groups || []).length} group(s)`, new: `${item.groups.length} group(s)` });
       const termNames = (ids) => (ids || []).map((id) => existing.terminals.find((t) => t.id === id)?.name).filter(Boolean).join(', ') || 'Default';
       const oldTerminals = match.terminal_ids?.length ? match.terminal_ids : match.terminal_id ? [match.terminal_id] : [];
-      if (item.terminal_ids.length && termNames(item.terminal_ids) !== termNames(oldTerminals)) item.changes.push({ field: 'Kitchen terminals', old: termNames(oldTerminals), new: termNames(item.terminal_ids) });
+      const newNames = [...item.terminal_ids.map((id) => existing.terminals.find((t) => t.id === id)?.name), ...item.new_kitchens].filter(Boolean).join(', ');
+      if ((item.terminal_ids.length || item.new_kitchens.length) && newNames !== termNames(oldTerminals)) item.changes.push({ field: 'Kitchens', old: termNames(oldTerminals), new: newNames });
       if (item.open_price !== null && item.open_price !== !!match.open_price) item.changes.push({ field: 'Open price', old: match.open_price ? 'Yes' : 'No', new: item.open_price ? 'Yes' : 'No' });
       if (item.tax_kind === 'restaurant' && match.tax_rate !== null) item.changes.push({ field: 'Tax', old: `${match.tax_rate}%`, new: 'Restaurant' });
       if (item.suggestions && item.suggestions.join(',') !== (match.suggestion_codes || []).join(',')) item.changes.push({ field: 'Go well with', old: (match.suggestion_codes || []).join(', ') || 'None', new: item.suggestions.join(', ') });
       if (category && category.id !== match.category_id) item.changes.push({ field: 'Category', old: existing.categories.find((c) => c.id === match.category_id)?.name || '', new: category.name });
+      else if (!category && item.category) item.changes.push({ field: 'Category', old: existing.categories.find((c) => c.id === match.category_id)?.name || '', new: item.category });
     }
     item.status = item.errors.length ? 'error' : match ? 'update' : 'new';
   }
@@ -521,6 +543,7 @@ function classify(records, existing, kind) {
     warnings: all.reduce((n, r) => n + r.warnings.length, 0),
     categories: records.categories.length,
     items: records.items.length,
+    kitchens: records.new_kitchens.length,
   };
 }
 
@@ -529,41 +552,42 @@ function classify(records, existing, kind) {
 const bold = (value) => ({ value, fontWeight: 'bold' });
 const row = (...values) => values.map((value) => (typeof value === 'number' ? { value, type: Number } : { value: String(value) }));
 
-// The one menu file, for categories and items alike (the client's own template, with Item Code
-// first). One row per dish; portions, add-ons, kitchens and go-well-with codes are lists in a cell.
+// The one menu file (the client's combined format): one sheet, one row per dish, its category in
+// the same row. Lists in a cell are separated by |: portions and add-ons as Name:Price, kitchens and
+// Go Well With as names or Item IDs.
 const MENU_HEADERS = [
-  'Item Code', 'Item Name', 'Item Description', 'Category Name', 'Category Description', 'Item Type (Veg/Non-veg)', 'Base Price (INR)',
-  'Open Price? (Yes/No)', 'Tax Mode (Restaurant/Custom/None)', 'Custom Tax Rate (%)', 'Item Status (Active/Inactive)', 'Display Order (1 = First)',
-  'Kitchen Terminals', 'Portions and Prices', 'Add-ons and Prices', 'Suggested Item Codes (for Go Well With)',
+  'Item ID', 'Item Name', 'Item Description', 'Category ID', 'Category Name', 'Category Description', 'Item Type (Veg/Non-veg)',
+  'Base Price (INR)', 'Open Price? (Yes/No)', 'Tax Mode (Restaurant/Custom/None)', 'Custom Tax Rate (%)', 'Item Status (Active/Inactive)',
+  'Display Order (1 = First)', 'Kitchen Terminals', 'Portions and Prices', 'Add-ons and Prices', 'Suggested Item IDs (for Go Well With)',
 ];
 const MENU_ROWS = [
-  ['ITEM-PTM-001', 'Paneer Tikka Masala', 'Paneer cubes cooked in a spiced tomato gravy.', 'Indian Main Course', 'Main-course curries and gravies.', 'Veg', 220, 'No', 'Restaurant', '', 'Active', 1, 'Main Kitchen', 'Regular:220 | Family:390', 'Extra Gravy:30 | Extra Cheese:25', 'ITEM-ROT-001 | ITEM-BN-002'],
-  ['ITEM-ROT-001', 'Tandoori Roti', 'Whole-wheat bread from the tandoor.', 'Breads', 'Breads from the tandoor.', 'Veg', 30, 'No', 'Restaurant', '', 'Active', 1, 'Main Kitchen', '', '', ''],
-  ['ITEM-BN-002', 'Butter Naan', 'Soft naan brushed with butter.', 'Breads', '', 'Veg', 45, 'No', 'Custom', 5, 'Active', 2, 'Main Kitchen', '', 'Garlic:10', ''],
+  ['ITM-001', 'Paneer Tikka Masala', 'Paneer cubes in a rich spiced tomato gravy.', 'CAT-001', 'Indian Main Course', 'Curries and gravy-based main-course dishes.', 'Veg', 220, 'No', 'Restaurant', '', 'Active', 1, 'Main Kitchen', 'Regular:220|Large:320', 'Extra Gravy:30|Extra Paneer:50', 'ITM-004|ITM-005'],
+  ['ITM-002', 'Butter Chicken', 'Tandoor-cooked chicken in creamy tomato gravy.', 'CAT-001', 'Indian Main Course', 'Curries and gravy-based main-course dishes.', 'Non-veg', 280, 'No', 'Restaurant', '', 'Active', 2, 'Main Kitchen', 'Half:180|Full:280', 'Extra Gravy:30|Extra Chicken:60', 'ITM-004|ITM-006'],
+  ['ITM-003', 'Dal Makhani', 'Slow-cooked black lentils finished with butter and cream.', 'CAT-001', 'Indian Main Course', 'Curries and gravy-based main-course dishes.', 'Veg', 190, 'No', 'Restaurant', '', 'Active', 3, 'Main Kitchen', 'Half:130|Full:190', 'Extra Butter:15', 'ITM-005|ITM-007'],
+  ['ITM-004', 'Tandoori Roti', 'Whole-wheat flatbread baked in a tandoor.', 'CAT-002', 'Breads', 'Indian breads served with curries and meals.', 'Veg', 20, 'No', 'Restaurant', '', 'Active', 1, 'Tandoor', 'Single:20|Basket of 4:70', 'Butter:5', 'ITM-001|ITM-002|ITM-003'],
+  ['ITM-005', 'Butter Naan', 'Soft leavened bread brushed with butter.', 'CAT-002', 'Breads', 'Indian breads served with curries and meals.', 'Veg', 40, 'No', 'Restaurant', '', 'Active', 2, 'Tandoor', 'Single:40|Basket of 2:75', 'Extra Butter:5|Extra Cheese:20', 'ITM-001|ITM-002|ITM-003'],
+  ['ITM-006', 'Jeera Rice', 'Basmati rice tempered with cumin.', 'CAT-003', 'Rice & Biryani', 'Rice dishes and biryanis.', 'Veg', 120, 'No', 'Restaurant', '', 'Active', 1, 'Main Kitchen', 'Half:80|Full:120', 'Extra Rice:50', 'ITM-002|ITM-003'],
+  ['ITM-007', 'Masala Papad', 'Crispy papad topped with onion, tomato, and spices.', 'CAT-004', 'Starters & Sides', 'Small plates, starters, and accompaniments.', 'Veg', 60, 'No', 'Restaurant', '', 'Active', 1, 'Starters', 'Single:60', 'Extra Chutney:10', 'ITM-001|ITM-003'],
+  ['ITM-008', 'Mango Lassi', 'Chilled mango yogurt drink.', 'CAT-005', 'Drinks', 'Cold and hot beverages.', 'Veg', 90, 'No', 'Custom', 5, 'Active', 1, 'Beverages', 'Regular:90|Large:130', 'Extra Ice Cream:25', 'ITM-001|ITM-002'],
+  ['ITM-009', 'Seasonal Special', 'Demo inactive item for testing availability status.', 'CAT-006', 'Specials', 'Limited-time dishes and seasonal offerings.', 'Veg', 150, 'No', 'Restaurant', '', 'Inactive', 1, 'Main Kitchen', 'Regular:150', '', 'ITM-004|ITM-005'],
 ];
-const MENU_GUIDE = [
-  ['Item Code', 'Your code for the dish: 2 to 12 letters, digits or hyphens, different for every dish. It is used to update the dish later and in Go Well With. Leave it empty and the app makes one.', 'ITEM-PTM-001'],
-  ['Item Name', 'Name of the dish or menu item.', 'Paneer Tikka Masala'],
-  ['Item Description', 'Short description of the dish. Optional.', 'Paneer cubes cooked in a spiced tomato gravy.'],
-  ['Category Name', 'The menu category this item belongs to. A category that is not on the menu yet is created.', 'Indian Main Course'],
-  ['Category Description', 'Description of the category itself, not the dish. Optional. Used when the category is created or updated.', 'Main-course curries and gravies.'],
-  ['Item Type (Veg/Non-veg)', 'Enter Veg or Non-veg. Empty means Veg.', 'Veg'],
-  ['Base Price (INR)', 'Base price in Indian rupees; enter a number only. Not needed when the item has portions or an open price.', '220'],
-  ['Open Price? (Yes/No)', 'Yes if staff enter the price while ordering; otherwise No.', 'No'],
-  ['Tax Mode (Restaurant/Custom/None)', "Restaurant uses the restaurant's tax settings; Custom uses the custom rate; None means no tax.", 'Restaurant'],
-  ['Custom Tax Rate (%)', 'Enter a number such as 5 for 5%. Use when Tax Mode is Custom. It is included in the price or added on top as the restaurant tax setting says.', '5'],
-  ['Item Status (Active/Inactive)', 'Active items can be ordered. Inactive items remain saved but cannot be ordered.', 'Active'],
-  ['Display Order (1 = First)', 'Whole number controlling display order in its category; 1 appears first.', '1'],
-  ['Kitchen Terminals', 'Terminal names that should receive this item. Separate multiple names with |. Use existing terminal names. Empty means the main kitchen.', 'Main Kitchen | Tandoor'],
-  ['Portions and Prices', 'Optional. Format each portion as Name:Price, separating multiple portions with |.', 'Regular:220 | Family:390'],
-  ['Add-ons and Prices', 'Optional. Format each add-on as Name:Price, separating multiple add-ons with |.', 'Extra Gravy:30 | Extra Cheese:25'],
-  ['Suggested Item Codes (for Go Well With)', 'Item codes of dishes to show under Go Well With when this dish is ordered. Separate multiple codes with |. They may be on the menu already or further down this file.', 'ITEM-ROT-001 | ITEM-BN-002'],
-  ['Important', 'The first rows in Menu Items are examples. Replace them or delete them before importing.', ''],
-  ['Important', 'Every row is checked and shown to you before anything is saved. Choose "Add new only" or "Also update matching" (matched by Item Code).', ''],
-  ['Important', 'The same file works for Import Categories: only the two category columns are read then.', ''],
-  ['Important', 'Images are not included; add the picture on the item in the app.', ''],
+const MENU_README = [
+  'POTKO Menu Import',
+  'One sheet, one row per dish. Each row carries its category: repeat the same Category ID, Category Name and Category Description on every dish of that category.',
+  'Categories and kitchens that are not in POTKO yet are created. Ones that already exist (same Category ID, or same name) are used, never duplicated.',
+  'Item ID and Category ID are your own IDs: 2 to 12 letters, digits or hyphens (ITM-001, CAT-001). Importing the file again updates the dishes with the same Item ID. Left empty, POTKO makes one.',
+  'Item Name and Category Name are required. Item Type: Veg or Non-veg. Item Status: Active or Inactive (inactive dishes cannot be ordered).',
+  'Base Price (INR): a number only. Open Price? Yes means the waiter types the price when ordering.',
+  'Tax Mode: Restaurant (the restaurant tax), Custom (the Custom Tax Rate %, added or included as the restaurant tax setting says) or None.',
+  'Portions and Prices: PortionName:Price|PortionName:Price, e.g. Half:180|Full:280. A single portion is simply the dish price.',
+  'Add-ons and Prices: AddOnName:Price|AddOnName:Price, e.g. Extra Gravy:30|Extra Paneer:50.',
+  'Kitchen Terminals: one or more kitchen names separated by |, e.g. Main Kitchen|Tandoor. Empty means the main kitchen.',
+  'Suggested Item IDs (for Go Well With): Item IDs separated by |, of dishes in this file or already on the menu. POTKO shows their current name and price.',
+  'Display Order (1 = First): the place of the dish in its category.',
+  'Every row is checked and shown to you before anything is saved; rows with a problem are listed with the reason.',
+  'The rows in Menu Import are demo data: replace them with your menu before importing. Pictures are added on each dish in the app.',
 ];
-const TEMPLATES = { menu: { headers: MENU_HEADERS, rows: MENU_ROWS, notes: MENU_GUIDE } };
+const TEMPLATES = { menu: { headers: MENU_HEADERS, rows: MENU_ROWS, readme: MENU_README } };
 
 // A cell that starts like a formula would run as one when the file is opened in Excel.
 const safeCell = (value) => {
@@ -572,16 +596,16 @@ const safeCell = (value) => {
 };
 const csvLine = (cells) => cells.map((c) => { const s = safeCell(c); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }).join(',');
 
-// The menu file for either kind of import (the same file serves both). Excel has the Menu Items
-// sheet and a Column Guide sheet; CSV holds the Menu Items only.
+// The menu file for either import (the same file serves both). Excel has the Menu Import sheet
+// and a Read Me sheet; CSV holds the Menu Import rows only.
 async function template(kind, format) {
   if (!['categories', 'items'].includes(kind)) throw new AppError(400, 'bad_input', 'Unknown template');
   const t = TEMPLATES.menu;
   if (format === 'csv') return Buffer.from(`\uFEFF${[t.headers, ...t.rows].map(csvLine).join('\r\n')}\r\n`, 'utf8');
-  const guide = [[bold('Column Name'), bold('What to enter'), bold('Example')], ...t.notes.map((n) => row(...n))];
+  const readme = t.readme.map((line, i) => [i === 0 ? bold(line) : { value: line }]);
   return writeExcel([
-    { sheet: 'Menu Items', data: [t.headers.map(bold), ...t.rows.map((r) => row(...r))] },
-    { sheet: 'Column Guide', data: guide },
+    { sheet: 'Menu Import', data: [t.headers.map(bold), ...t.rows.map((r) => row(...r))] },
+    { sheet: 'Read Me', data: readme },
   ]).toBuffer();
 }
 

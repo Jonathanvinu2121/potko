@@ -445,13 +445,13 @@ router.get('/terminals', async (req, res) => {
 router.post('/terminals', menuOrTables, async (req, res) => {
   const { restaurantId } = req.user;
   const name = text(req.body?.name, 40);
-  if (!name) throw bad('Give the terminal a name, for example Tandoor');
+  if (!name) throw bad('Give the kitchen a name, for example Tandoor');
   const { rows } = await db
     .query(
       `INSERT INTO kitchen_terminals (restaurant_id, name, sort) VALUES ($1, $2, (SELECT COALESCE(max(sort), 0) + 1 FROM kitchen_terminals WHERE restaurant_id = $1)) RETURNING id`,
       [restaurantId, name]
     )
-    .catch(nameTaken('a terminal'));
+    .catch(nameTaken('a kitchen'));
   await note(req, 'terminal.add', 'terminal', rows[0].id, { new: { name } });
   floorChanged(restaurantId);
   res.status(201).json({ terminals: await listTerminals(db, restaurantId), id: rows[0].id });
@@ -462,12 +462,12 @@ router.patch('/terminals/:id', menuOrTables, async (req, res) => {
   const { restaurantId } = req.user;
   const id = Number(req.params.id);
   const before = (await db.query('SELECT * FROM kitchen_terminals WHERE id = $1 AND restaurant_id = $2', [id, restaurantId])).rows[0];
-  if (!before) throw new AppError(404, 'no_terminal', 'No such terminal');
+  if (!before) throw new AppError(404, 'no_terminal', 'No such kitchen');
   const body = req.body || {};
   await db.tx(async (client) => {
     if (body.name !== undefined) {
       const name = text(body.name, 40);
-      if (!name) throw bad('Give the terminal a name');
+      if (!name) throw bad('Give the kitchen a name');
       await client.query('UPDATE kitchen_terminals SET name = $1 WHERE id = $2', [name, id]);
     }
     if (body.is_default === true && !before.is_default) {
@@ -476,11 +476,11 @@ router.patch('/terminals/:id', menuOrTables, async (req, res) => {
     }
     if (body.active !== undefined) {
       // Tickets always need somewhere to go: the default terminal cannot be switched off.
-      if (body.active === false && (before.is_default && body.is_default !== false)) throw new AppError(409, 'default_terminal', 'Make another terminal the default before switching this one off');
+      if (body.active === false && (before.is_default && body.is_default !== false)) throw new AppError(409, 'default_terminal', 'Make another kitchen the default before switching this one off');
       await client.query('UPDATE kitchen_terminals SET active = $1 WHERE id = $2', [body.active === true, id]);
     }
     await audit(client, { restaurantId, userId: req.user.id, action: 'terminal.edit', entity: 'terminal', entityId: id, old: { name: before.name, active: before.active, is_default: before.is_default }, new: body });
-  }).catch(nameTaken('a terminal'));
+  }).catch(nameTaken('a kitchen'));
   floorChanged(restaurantId);
   ws.toRestaurant(restaurantId, 'menu.updated', {});
   res.json({ terminals: await listTerminals(db, restaurantId) });
@@ -492,10 +492,10 @@ router.put('/terminals/:id/chefs', staff, async (req, res) => {
   const { restaurantId } = req.user;
   const id = Number(req.params.id);
   const terminal = (await db.query('SELECT id, name FROM kitchen_terminals WHERE id = $1 AND restaurant_id = $2', [id, restaurantId])).rows[0];
-  if (!terminal) throw new AppError(404, 'no_terminal', 'No such terminal');
+  if (!terminal) throw new AppError(404, 'no_terminal', 'No such kitchen');
   const wanted = [...new Set(Array.isArray(req.body?.userIds) ? req.body.userIds.map(Number) : [])].filter(Number.isInteger);
   const chefs = (await db.query(`SELECT id, name FROM users WHERE restaurant_id = $1 AND role = 'chef' AND deleted_at IS NULL AND id = ANY($2::int[])`, [restaurantId, wanted])).rows;
-  if (chefs.length !== wanted.length) throw bad('Only chefs can be assigned to a kitchen terminal');
+  if (chefs.length !== wanted.length) throw bad('Only chefs can be assigned to a kitchen');
   const changed = await db.tx(async (client) => {
     const before = (await client.query('SELECT user_id FROM user_terminals WHERE terminal_id = $1', [id])).rows.map((r) => r.user_id);
     await client.query('DELETE FROM user_terminals WHERE terminal_id = $1 AND NOT (user_id = ANY($2::int[]))', [id, wanted]);
@@ -522,7 +522,7 @@ router.put('/terminals/:id/items', requirePerm('menu.manage'), async (req, res) 
   const { restaurantId } = req.user;
   const id = Number(req.params.id);
   const terminal = (await db.query('SELECT id, name, is_default FROM kitchen_terminals WHERE id = $1 AND restaurant_id = $2', [id, restaurantId])).rows[0];
-  if (!terminal) throw new AppError(404, 'no_terminal', 'No such terminal');
+  if (!terminal) throw new AppError(404, 'no_terminal', 'No such kitchen');
   const wanted = [...new Set(Array.isArray(req.body?.itemIds) ? req.body.itemIds.map(Number) : [])].filter(Number.isInteger);
   const found = await db.query('SELECT id FROM menu_items WHERE restaurant_id = $1 AND deleted_at IS NULL AND id = ANY($2::int[])', [restaurantId, wanted]);
   if (found.rows.length !== wanted.length) throw bad('One of these dishes is no longer on the menu');
@@ -553,8 +553,8 @@ router.delete('/terminals/:id', menuOrTables, async (req, res) => {
   const { restaurantId } = req.user;
   const id = Number(req.params.id);
   const before = (await db.query('SELECT * FROM kitchen_terminals WHERE id = $1 AND restaurant_id = $2', [id, restaurantId])).rows[0];
-  if (!before) throw new AppError(404, 'no_terminal', 'No such terminal');
-  if (before.is_default) throw new AppError(409, 'default_terminal', 'Make another terminal the default before deleting this one');
+  if (!before) throw new AppError(404, 'no_terminal', 'No such kitchen');
+  if (before.is_default) throw new AppError(409, 'default_terminal', 'Make another kitchen the default before deleting this one');
   // A terminal that already cooked something is part of old tickets and reports: it can only be switched off.
   const used = await db.query('SELECT 1 FROM order_items WHERE terminal_id = $1 LIMIT 1', [id]);
   if (used.rows[0]) throw new AppError(409, 'terminal_used', `${before.name} has past tickets, so it cannot be deleted. Switch it off instead.`);

@@ -92,7 +92,7 @@ export default function KitchenDishes() {
         ) : status !== 'ready' || picked === null ? (
           <ListState loading rows={5} />
         ) : shown.length === 0 ? (
-          <EmptyState icon="silverware-fork-knife" title={items.length ? 'No dish matches' : 'No dishes on the menu yet'} text={items.length ? 'Try another name or code.' : 'Add dishes under More, Menu first.'} />
+          <EmptyState icon="silverware-fork-knife" title={items.length ? 'No dish matches' : 'No dishes on the menu yet'} text={items.length ? 'Try another name or Item ID.' : 'Add dishes under More, Menu first.'} />
         ) : (
           categories.map((category) => {
             const dishes = shown.filter((i) => i.category_id === category.id);
@@ -107,7 +107,7 @@ export default function KitchenDishes() {
               <Card key={category.id} style={{ gap: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }}>
                   <View style={{ flex: 1 }}>
-                    <Txt size={16} weight={700} numberOfLines={1}>
+                    <Txt size={16} weight={700} numberOfLines={2}>
                       {category.name}
                     </Txt>
                     <Txt size={12} color="textSecondary" tabular>

@@ -75,6 +75,7 @@ const blankTable = (areaId) => ({ label: '', seats: 4, area_id: areaId, kind: 'n
 export function TableFormSheet({ table, areaId, areas, visible, onClose }) {
   const [form, setForm] = useState(blankTable(areaId));
   const [busy, setBusy] = useState(false);
+  const areaName = areas.find((a) => a.id === areaId)?.name;
   const [seen, setSeen] = useState(null);
   const key = visible ? (table?.id ?? `new-${areaId}`) : null;
   if (key !== seen) {
@@ -102,7 +103,7 @@ export function TableFormSheet({ table, areaId, areas, visible, onClose }) {
     <BottomSheet
       visible={visible}
       onClose={busy ? () => {} : onClose}
-      title={table ? `Edit ${table.label}` : 'Add Table'}
+      title={table ? `Edit ${table.label}` : areaName ? `Add Table to ${areaName}` : 'Add Table'}
       footer={
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Button title="Cancel" variant="secondary" disabled={busy} onPress={onClose} style={{ flex: 1 }} />
@@ -118,7 +119,8 @@ export function TableFormSheet({ table, areaId, areas, visible, onClose }) {
             </Txt>
           </View>
           <NumberRow label="Capacity" required value={form.seats} min={1} max={50} onChange={(seats) => set({ seats })} unit="seats" />
-          <Choices label="Dining Area" required options={areas.map((a) => ({ value: a.id, label: a.name }))} value={form.area_id} onChange={(area_id) => set({ area_id })} />
+          {/* Added from inside a dining area, the table belongs there: the area is asked only when editing (to move it). */}
+          {table ? <Choices label="Dining Area" required options={areas.map((a) => ({ value: a.id, label: a.name }))} value={form.area_id} onChange={(area_id) => set({ area_id })} /> : null}
           <Choices label="Table Type" options={TABLE_KINDS} value={form.kind} onChange={(kind) => set({ kind })} />
           <SwitchRow title={form.active ? 'Active' : 'Inactive'} text="Inactive tables won't appear in floor view" value={form.active} onChange={(active) => set({ active })} />
       </>

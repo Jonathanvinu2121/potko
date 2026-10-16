@@ -18,7 +18,7 @@ router.use(requirePerm('menu.manage'));
 const KINDS = ['categories', 'items'];
 
 async function loadExisting(q, restaurantId) {
-  const categories = (await q.query('SELECT id, name, description, active, sort FROM categories WHERE restaurant_id = $1 AND deleted_at IS NULL', [restaurantId])).rows;
+  const categories = (await q.query('SELECT id, code, name, description, active, sort FROM categories WHERE restaurant_id = $1 AND deleted_at IS NULL', [restaurantId])).rows;
   const items = (await q.query(
     `SELECT m.id, m.code, m.name, m.category_id, m.sizes, m.price, m.description, m.tax_rate, m.tax_mode, m.available, m.modifier_groups,
             m.terminal_id, m.terminal_ids, m.open_price,
@@ -37,12 +37,14 @@ const brief = (kind) => (r) => ({
   name: r.name,
   code: r.code ?? undefined,
   category: r.category ?? undefined,
+  category_code: r.category_code ?? undefined,
   description: r.description,
   price: r.open_price ? undefined : r.price ?? undefined,
   open_price: r.open_price || undefined,
   portions: r.sizes?.length ? r.sizes : undefined,
   addons: r.groups?.length ? r.groups.flatMap((g) => g.options.map((o) => o.name)) : undefined,
   kitchens: r.terminals?.length ? r.terminals : undefined,
+  new_kitchens: r.new_kitchens?.length ? r.new_kitchens : undefined,
   go_with: r.suggestions?.length ? r.suggestions : undefined,
   active: r.active,
   status: r.status,
@@ -100,6 +102,7 @@ router.post('/preview', async (req, res) => {
     columns,
     fields,
     counts,
+    new_kitchens: records.new_kitchens || [],
     orphans: records.orphans || [],
     records: [...records.categories.map(brief('category')), ...records.items.map(brief('item'))].slice(0, 500),
   });
@@ -144,6 +147,8 @@ router.post('/:id/commit', async (req, res) => {
         if (mode !== 'update' || c.changes.length === 0) { c.result = 'skipped'; c.result_message = mode === 'update' ? 'Nothing to change' : 'Already on the menu'; continue; }
         await row(client, c, async () => {
           const set = {};
+          if (c.name && c.changes.some((ch) => ch.field === 'Name')) set.name = c.name;
+          if (c.code) set.code = c.code;
           if (c.description !== null) set.description = c.description || null;
           if (c.active !== null) set.active = c.active;
           const cols = Object.keys(set);
@@ -154,17 +159,43 @@ router.post('/:id/commit', async (req, res) => {
         continue;
       }
       await row(client, c, async () => {
-        await menu.insertCategory(client, restaurantId, req.user.id, { name: c.name, description: c.description, active: c.active ?? true }, { position: c.position, action: 'category.import' });
+        await menu.insertCategory(client, restaurantId, req.user.id, { name: c.name, code: c.code, description: c.description, active: c.active ?? true }, { position: c.position, action: 'category.import' });
         c.result = 'created';
       });
     }
 
     const categories = (await client.query('SELECT * FROM categories WHERE restaurant_id = $1 AND deleted_at IS NULL', [restaurantId])).rows;
-    const categoryOf = (name) => categories.find((c) => c.name.toLowerCase() === String(name).trim().toLowerCase());
+    // A dish's category: by its Category ID first, else by name.
+    const categoryOf = (item) =>
+      (item.category_code && categories.find((c) => c.code && c.code.toUpperCase() === item.category_code.toUpperCase())) ||
+      categories.find((c) => c.name.toLowerCase() === String(item.category).trim().toLowerCase());
+
+    // Kitchens the file names that the restaurant did not have: made now, so their dishes can go to them.
+    const madeKitchens = [];
+    for (const name of records.new_kitchens || []) {
+      const made = await client.query(
+        `INSERT INTO kitchen_terminals (restaurant_id, name, sort)
+         VALUES ($1, $2, (SELECT COALESCE(max(sort), 0) + 1 FROM kitchen_terminals WHERE restaurant_id = $1))
+         ON CONFLICT DO NOTHING RETURNING id`,
+        [restaurantId, name]
+      );
+      if (made.rows[0]) {
+        madeKitchens.push(name);
+        await audit(client, { restaurantId, userId: req.user.id, action: 'terminal.add', entity: 'terminal', entityId: made.rows[0].id, new: { name, from: 'menu import' } });
+      }
+    }
+    const kitchens = (await client.query('SELECT id, name FROM kitchen_terminals WHERE restaurant_id = $1', [restaurantId])).rows;
+    for (const item of records.items) {
+      for (const name of item.new_kitchens || []) {
+        const k = kitchens.find((x) => x.name.toLowerCase() === name.toLowerCase());
+        if (k && !item.terminal_ids.includes(k.id)) item.terminal_ids.push(k.id);
+      }
+      item.terminal_id = item.terminal_ids?.[0] ?? null;
+    }
 
     for (const item of records.items) {
       if (item.status === 'error') { item.result = 'failed'; continue; }
-      const category = categoryOf(item.category);
+      const category = categoryOf(item);
       if (!category) { item.result = 'failed'; item.result_message = `Category "${item.category}" was not imported`; continue; }
       const fields = {
         name: item.name,
@@ -232,6 +263,7 @@ router.post('/:id/commit', async (req, res) => {
       failed: cats.failed + items.failed + (records.orphans || []).length,
       categories: cats,
       items,
+      kitchens: madeKitchens,
       warnings: [...records.categories, ...records.items].reduce((n, r) => n + r.warnings.length, 0),
     };
     await client.query('UPDATE imports SET rows = $1, mode = $2, summary = $3, committed_at = now() WHERE id = $4', [JSON.stringify(records), mode, JSON.stringify(summary), job.id]);

@@ -17,28 +17,21 @@ import { Button } from '../../../../src/components/Button';
 import { Line, RadioCard } from '../../../../src/components/Lists';
 import { Success, Notice } from '../../../../src/components/Feedback';
 import { IconTile } from '../../../../src/components/Picture';
-import { Choices } from '../../../../src/components/Forms';
 
-const KINDS = {
-  categories: {
-    title: 'Import Categories',
-    one: 'category',
-    many: 'categories',
-    includes: ['The same menu file as for items (one template for both)', 'Category Name (required) and Category Description (optional)', 'Only the two category columns are read here'],
-  },
-  items: {
-    title: 'Import Items',
-    one: 'item',
-    many: 'items',
-    includes: [
-      'Item Name and Category Name (required); a new category is created',
-      'Item Code (recommended: updates the dish later, and Go Well With uses it)',
-      'Base Price, or Portions written as Regular:220 | Family:390',
-      'Open Price, and Tax Mode: Restaurant, Custom (with its rate) or None',
-      'Kitchen Terminals (Main Kitchen | Tandoor) and Add-ons (Extra Gravy:30 | …)',
-      'Go Well With: the item codes of dishes to suggest',
-    ],
-  },
+// One import for the whole menu, whether it is started from Add Category or from "+ Add" in a
+// category: the combined file has one row per dish with its category in the same row.
+const WORDS = {
+  title: 'Import Menu',
+  many: 'categories and dishes',
+  includes: [
+    'One row per dish, with its Category ID, Category Name and Category Description',
+    'Item Name and Category Name (required); Item ID is made for you if empty, and updates the dish when the file is imported again',
+    'Base Price, or Portions and Prices as Half:180|Full:280',
+    'Add-ons and Prices as Extra Gravy:30|Extra Paneer:50',
+    'Open Price, Tax Mode (Restaurant, Custom or None), Item Status, Display Order',
+    'Kitchen Terminals as Main Kitchen|Tandoor, and Suggested Item IDs for Go Well With',
+    'New categories and kitchens are created; existing ones are used, never duplicated',
+  ],
 };
 const STATUS = {
   new: { label: 'New', tone: 'success' },
@@ -47,7 +40,7 @@ const STATUS = {
 };
 const RESULT = { created: 'Created', updated: 'Updated', skipped: 'Skipped', failed: 'Not imported' };
 
-// Import categories or items from a CSV or Excel file:
+// Import the menu (categories and dishes) from a CSV or Excel file:
 // template, choose the file, match the columns if the headings differ, preview every row with
 // its problems, choose "create new only" or "update matching", import, summary.
 // Nothing on the menu is ever overwritten without that choice.
@@ -55,7 +48,7 @@ export default function MenuImport() {
   const t = useTheme();
   const router = useRouter();
   const kind = useLocalSearchParams().kind === 'categories' ? 'categories' : 'items';
-  const words = KINDS[kind];
+  const words = WORDS;
   const [step, setStep] = useState('choose'); // choose -> map -> preview -> done
   const [file, setFile] = useState(null); // { name, data }
   const [preview, setPreview] = useState(null);
@@ -149,6 +142,7 @@ export default function MenuImport() {
             {stat(s.mode === 'update' ? 'Skipped (nothing to change)' : 'Skipped (already on the menu)', s.skipped, 'warning')}
             {stat('Not imported (errors)', s.failed, 'error')}
           </Card>
+          {s.kitchens?.length ? <Notice icon="chef-hat" title={`${plural(s.kitchens.length, 'kitchen')} added: ${s.kitchens.join(', ')}`} text="Give them their chefs under More › Kitchens." /> : null}
           {result.problems.length > 0 ? (
             <Card style={{ gap: 10 }}>
               <Txt size={15} weight={700}>
@@ -236,7 +230,7 @@ export default function MenuImport() {
                 {preview.filename}
               </Txt>
               <Txt size={13} color="textSecondary">
-                {[c.categories ? plural(c.categories, 'category', 'categories') : null, c.items ? plural(c.items, 'item') : null].filter(Boolean).join(' and ')} found{preview.sheet && preview.sheet !== 'CSV' ? ` on sheet ${preview.sheet}` : ''}
+                {[c.categories ? plural(c.categories, 'category', 'categories') : null, c.items ? plural(c.items, 'dish', 'dishes') : null].filter(Boolean).join(' and ') || 'Nothing new'} found{preview.sheet && preview.sheet !== 'CSV' ? ` on sheet ${preview.sheet}` : ''}
               </Txt>
             </View>
           </Card>
@@ -247,6 +241,7 @@ export default function MenuImport() {
             <Chip label={`Already on menu ${c.update}`} selected={filter === 'update'} onPress={() => setFilter('update')} />
             <Chip label={`Errors ${c.error}`} selected={filter === 'error'} onPress={() => setFilter('error')} />
           </ScrollView>
+          {preview.new_kitchens?.length ? <Notice icon="chef-hat" title={`New ${preview.new_kitchens.length === 1 ? 'kitchen' : 'kitchens'}: ${preview.new_kitchens.join(', ')}`} text="They are added with the import. Give them their chefs under More › Kitchens." /> : null}
           {c.error > 0 ? <Notice tone="error" icon="alert-circle-outline" text={`${plural(c.error, 'row')} cannot be imported and will be left out. Fix ${c.error === 1 ? 'it' : 'them'} in the file and import again, or continue with the rest.`} /> : null}
           {(preview.orphans || []).map((line) => (
             <Notice key={line} tone="error" icon="alert-circle-outline" text={line} />
@@ -265,13 +260,14 @@ export default function MenuImport() {
               </View>
               <Txt size={13} color="textSecondary" numberOfLines={2}>
                 {r.kind === 'category'
-                  ? [r.description, r.active === false ? 'Inactive' : null].filter(Boolean).join(' · ') || 'Category'
+                  ? ['Category', r.code, r.description, r.active === false ? 'Inactive' : null].filter(Boolean).join(' · ')
                   : [
                       r.category,
                       r.code,
                       r.open_price ? 'Open price' : r.portions ? r.portions.map((p) => `${p.label} ${money(p.price)}`).join(', ') : r.price !== undefined && r.price !== null ? money(r.price) : null,
                       r.addons?.length ? plural(r.addons.length, 'add-on') : null,
                       r.kitchens?.length ? r.kitchens.join(' + ') : null,
+                      r.active === false ? 'Inactive' : null,
                       r.go_with?.length ? `Goes well with ${r.go_with.join(', ')}` : null,
                     ].filter(Boolean).join(' · ')}
               </Txt>
@@ -336,7 +332,7 @@ export default function MenuImport() {
                 Download Template
               </Txt>
               <Txt size={13} color="textSecondary">
-                The menu file: the right headings, sample rows, and a Column Guide sheet
+                The menu file: the right headings, sample rows, and a Read Me sheet
               </Txt>
             </View>
           </View>
@@ -360,7 +356,6 @@ export default function MenuImport() {
           ))}
         </Card>
         <Notice text="Every row is checked first and shown to you. Rows with a problem are left out and listed with the reason; nothing already on the menu changes unless you choose to update it." />
-        {kind === 'items' ? <Choices label="Importing categories instead?" options={[{ value: 'go', label: 'Open category import', icon: 'shape-outline' }]} value={null} onChange={() => router.replace('/more/menu/import?kind=categories')} /> : null}
       </View>
     </Screen>
   );

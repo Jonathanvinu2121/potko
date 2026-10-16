@@ -74,7 +74,7 @@ export function Kpi({ label, value, icon, move, compared, hint }) {
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         {icon ? <Icon name={icon} size={16} color="textSecondary" /> : null}
-        <Txt size={12} weight={600} color="textSecondary" numberOfLines={1} style={{ flex: 1 }}>
+        <Txt size={12} weight={600} color="textSecondary" numberOfLines={2} style={{ flex: 1 }}>
           {label}
         </Txt>
       </View>

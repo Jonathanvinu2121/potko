@@ -405,7 +405,7 @@ test('import: preview, create new only, the same import twice, then update match
   });
   assert.equal(first.status, 200);
   // "Nowhere" is not on the menu: it comes along as a new category with its dish.
-  assert.deepEqual(first.data.counts, { new: 3, update: 1, error: 1, warnings: 0, categories: 1, items: 4 });
+  assert.deepEqual(first.data.counts, { new: 3, update: 1, error: 1, warnings: 0, categories: 1, items: 4, kitchens: 0 });
 
   const created = await manager.post(`/menu/import/${first.data.id}/commit`, { mode: 'create' });
   assert.deepEqual([created.data.summary.created, created.data.summary.updated, created.data.summary.skipped, created.data.summary.failed], [3, 0, 1, 1]);

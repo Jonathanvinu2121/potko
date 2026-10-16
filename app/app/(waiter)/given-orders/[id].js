@@ -7,7 +7,7 @@ import { useMenu } from '../../../src/store/menu';
 import { useDraft } from '../../../src/store/draft';
 import { useConnection, send } from '../../../src/lib/ws';
 import { toast } from '../../../src/store/toast';
-import { money, orderLabel } from '../../../src/lib/format';
+import { money, orderLabel, plural } from '../../../src/lib/format';
 import { ITEM_STATUS, TYPE_LABEL, TYPE_ICON, allSettled, cancelRequested, isOpen, itemsWith, onFloor } from '../../../src/lib/orders';
 import { usePrices, useSeesBills } from '../../../src/lib/prices';
 import { Screen } from '../../../src/components/Screen';
@@ -222,7 +222,7 @@ export default function OrderStatus() {
             {title}
           </Txt>
           <Txt size={12} color="textSecondary" tabular>
-            {items.length} {items.length === 1 ? 'item' : 'items'}
+            {plural(items.reduce((n, i) => n + i.qty, 0), 'item')}
           </Txt>
         </View>
         {items.map(card)}

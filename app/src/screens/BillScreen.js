@@ -152,6 +152,8 @@ function DiscountSheet({ visible, order, onClose }) {
 export function BillScreen({ orderId, paths }) {
   const t = useTheme();
   const router = useRouter();
+  // A closed table has no order screen to go back to: return to the list instead.
+  const leave = () => (router.dismissTo ? router.dismissTo(paths.list) : router.navigate(paths.list));
   const restaurant = useAuth((s) => s.restaurant);
   const role = useAuth((s) => s.user?.role);
   const collects = useCan('payments.collect');
@@ -237,7 +239,7 @@ export function BillScreen({ orderId, paths }) {
         footer={
           seated ? (
             <View style={{ gap: 8 }}>
-              <Button title="Close Table" icon="check-circle-outline" loading={busy === 'close'} onPress={() => act('close', async () => { await send('order.close', { orderId: order.id }); toast(`${name} closed and free again`, { tone: 'success' }); router.back(); })} />
+              <Button title="Close Table" icon="check-circle-outline" loading={busy === 'close'} onPress={() => act('close', async () => { await send('order.close', { orderId: order.id }); toast(`${name} closed and free again`, { tone: 'success' }); leave(); })} />
               <Button title="Guests are still seated" variant="link" onPress={() => router.back()} />
             </View>
           ) : (

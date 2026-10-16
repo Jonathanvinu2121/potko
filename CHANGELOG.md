@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.0.1 — 2026-10-16
+
+The client's combined menu file is read exactly as written, staff sign in with a Staff ID everywhere, and a
+page-by-page pass at phone width. Checked end to end on an empty server: set-up, the client's own file
+(6 categories, 9 dishes, 3 new kitchens), tables, staff, an order through the kitchen, bill, payment, close.
+
+### Menu import
+- **One file, one import.** The template is the client's own (`POTKO_Menu_Import_Template`: a **Menu Import**
+  sheet of 17 columns and a **Read Me** sheet). Add Category and "+ Add" both import categories and dishes.
+- **Category ID** (e.g. `CAT-001`) on categories: in the file, on the category form, on the lists. A new ID
+  or name creates the category; an existing one is reused, never duplicated (migration 005).
+- **Item ID** replaces "Item Code" in the app and the file (`ITM-001`); still optional (one is made).
+- Portions and add-ons as `Regular:220|Large:320` (no spaces needed); a single portion is a plain price;
+  without a Base Price the first portion's price is used.
+- **Kitchen Terminals** not set up yet are created by the import (listed in the preview) instead of refusing
+  the row. **Suggested Item IDs** become Goes Well With links once every dish is in.
+- The preview shows categories with their IDs and descriptions, dishes, inactive dishes, and new kitchens;
+  importing the same file again changes nothing.
+
+### Staff ID
+- The staff form asks for a **Staff ID** (an email still works), the staff list shows each person's Staff ID
+  next to their role, and every message says Staff ID.
+
+### Consistency pass
+- Long names wrap to two lines instead of being cut: page titles, dish and category names, the kitchen line,
+  Overview alerts, the Payments queue, a chef's kitchens, report labels and the staff report.
+- Reports: the five tabs fit their labels; the peak value on a chart is never cut.
+- Item counts are quantities everywhere (Butter Naan ×2 is 2 items), the waiter's list included.
+- Messages, toasts and the audit log say **kitchen** (as the Kitchens page does), not "terminal"; a chef's
+  kitchens are listed in kitchen order.
+- **Close Table** on the bill screen returns to the list (waiter: Given Orders; manager: Payments) instead of a
+  "This order is closed" page.
+- Adding a table from inside a dining area does not ask the area again ("Add Table to Main Hall").
+
 ## 2.0.0 — 2026-10-16 (client release)
 
 The POS + KOT rebuild of version 1, finished to the "finals" design and the client's review rounds.

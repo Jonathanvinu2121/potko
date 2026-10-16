@@ -120,9 +120,9 @@ export default function StaffList() {
                       {person.id === me?.id ? <Txt size={13} color="textSecondary">{'  (you)'}</Txt> : null}
                     </Txt>
                     <Txt size={13} color="textSecondary" numberOfLines={1}>
-                      {ROLE_LABEL[person.role]}
+                      {ROLE_LABEL[person.role]} · {person.login_id}
                     </Txt>
-                    <Txt size={13} color="textSecondary" numberOfLines={1}>
+                    <Txt size={13} color="textSecondary" numberOfLines={2}>
                       {person.assignment}
                     </Txt>
                   </View>

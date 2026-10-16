@@ -5,7 +5,7 @@ import { useTheme } from '../../../src/theme';
 import { useLive } from '../../../src/store/live';
 import { useNow } from '../../../src/lib/useNow';
 import { orderLabel } from '../../../src/lib/format';
-import { isOpen, onFloor, liveItems, readyItems, unavailableItems, TYPE_ICON } from '../../../src/lib/orders';
+import { isOpen, onFloor, itemCount, readyItems, unavailableItems, TYPE_ICON } from '../../../src/lib/orders';
 import { areaAllowed } from '../../../src/lib/access';
 import { useAuth } from '../../../src/store/auth';
 import { Screen } from '../../../src/components/Screen';
@@ -79,7 +79,7 @@ export default function GivenOrders() {
           {visible.map((order) => {
             const ready = readyItems(order).length;
             const unavailable = unavailableItems(order).length;
-            const count = liveItems(order).length;
+            const count = itemCount(order);
             const paid = !isOpen(order);
             return (
               <Pressable

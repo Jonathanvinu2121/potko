@@ -26,14 +26,14 @@ const fail = (err) => toast(err.message, { icon: 'alert-circle-outline', tone: '
 
 // Add or edit a category, typed in. (Importing many from a file is chosen before this opens.)
 function CategorySheet({ category, count, visible, onClose }) {
-  const [form, setForm] = useState({ name: '', description: '', position: 1, active: true, image_id: null });
+  const [form, setForm] = useState({ name: '', code: '', description: '', position: 1, active: true, image_id: null });
   const [busy, setBusy] = useState(false);
   const [seen, setSeen] = useState(null);
   const key = visible ? (category?.id ?? 'new') : null;
   if (key !== seen) {
     setSeen(key);
     if (visible) {
-      setForm(category ? { name: category.name, description: category.description ?? '', position: category.position, active: category.active, image_id: category.image_id } : { name: '', description: '', position: count + 1, active: true, image_id: null });
+      setForm(category ? { name: category.name, code: category.code ?? '', description: category.description ?? '', position: category.position, active: category.active, image_id: category.image_id } : { name: '', code: '', description: '', position: count + 1, active: true, image_id: null });
     }
   }
   const set = (changes) => setForm((f) => ({ ...f, ...changes }));
@@ -41,7 +41,7 @@ function CategorySheet({ category, count, visible, onClose }) {
   const save = async () => {
     setBusy(true);
     try {
-      const body = { name: form.name, description: form.description, active: form.active, image_id: form.image_id, position: form.position };
+      const body = { name: form.name, code: form.code.trim(), description: form.description, active: form.active, image_id: form.image_id, position: form.position };
       const result = category ? await api(`/menu/categories/${category.id}`, { method: 'PATCH', body }) : await api('/menu/categories', { method: 'POST', body });
       toast(category ? `${result.category.name} saved` : `${result.category.name} added`, { tone: 'success' });
       onClose();
@@ -66,6 +66,7 @@ function CategorySheet({ category, count, visible, onClose }) {
     >
       <PictureField imageId={form.image_id} onChange={(image_id) => set({ image_id })} icon="shape-outline" hint="JPG or PNG. Shown next to the category." />
       <TextField label="Category Name" required value={form.name} onChangeText={(name) => set({ name })} placeholder="e.g. Burgers" autoCapitalize="words" maxLength={40} />
+      <TextField label="Category ID (optional)" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} placeholder="e.g. CAT-001, as in the menu file" autoCapitalize="characters" maxLength={12} />
       <TextField label="Description (optional)" value={form.description} onChangeText={(description) => set({ description })} placeholder="e.g. Delicious burgers, sandwiches" autoCapitalize="sentences" maxLength={120} />
       <NumberRow label="Display Order" value={form.position} min={1} max={Math.max(1, count + (category ? 0 : 1))} onChange={(position) => set({ position })} unit="1 is shown first" />
       <SwitchRow title={form.active ? 'Active' : 'Inactive'} text="Inactive categories do not appear for waiters" value={form.active} onChange={(active) => set({ active })} />
@@ -153,11 +154,11 @@ export default function MenuCategories() {
               >
                 <Picture imageId={category.image_id} icon="silverware-fork-knife" size={52} />
                 <View style={{ flex: 1 }}>
-                  <Txt size={16} weight={700} numberOfLines={1}>
+                  <Txt size={16} weight={700} numberOfLines={2}>
                     {category.name}
                   </Txt>
                   <Txt size={13} color="textSecondary">
-                    {plural(category.item_count, 'item')}
+                    {[plural(category.item_count, 'item'), category.code].filter(Boolean).join(' · ')}
                   </Txt>
                 </View>
               </Pressable>
@@ -181,7 +182,7 @@ export default function MenuCategories() {
         onClose={() => setAdding(false)}
         actions={[
           { icon: 'shape-outline', title: 'Add Manually', subtitle: 'Create a category, one at a time', onPress: () => setForm(null) },
-          { icon: 'tray-arrow-up', title: 'Import from File', subtitle: 'Many categories at once, from Excel or CSV', onPress: () => router.push('/more/menu/import?kind=categories') },
+          { icon: 'tray-arrow-up', title: 'Import from File', subtitle: 'Categories and dishes, from one Excel or CSV file', onPress: () => router.push('/more/menu/import?kind=categories') },
         ]}
       />
       <ActionSheet

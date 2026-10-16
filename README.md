@@ -29,7 +29,7 @@ Under **More**:
   kitchen, tick its dishes one by one or a category at a time, assign its chefs. A dish is usually cooked
   at one kitchen and may be shown at several; a dish no kitchen was given is cooked at the default one.
 - **Menu** — categories, then their dishes (both dragged into order and switched on and off, asked first).
-  A dish has an item code, portions, add-ons, open price, tax, its kitchens and **Goes Well With** (dishes the
+  A dish has an Item ID, portions, add-ons, open price, tax, its kitchens and **Goes Well With** (dishes the
   waiter is offered with it). Add Category and "+ Add" in a category both ask **Add Manually** or **Import
   from File**; see [Importing the menu](#importing-the-menu).
 - **Staff** — who is online; a profile with Overview, Role & Access and Activity; add or edit in steps
@@ -214,28 +214,30 @@ Free-plan limits to know about:
 
 ## Importing the menu
 
-One file for both imports: **More › Menu › Add Category › Import from File** reads only its category
-columns; **"+ Add" › Import from File** in a category reads the dishes too (and creates any category that is
-not on the menu yet). The import page gives the template (Excel with a Column Guide sheet, or CSV). One row
+One file holds the whole menu, and both buttons import all of it: **More › Menu › Add Category › Import from
+File** and **"+ Add" › Import from File** inside a category. The import page gives the template
+(`POTKO_Menu_Import_Template`: Excel with a **Menu Import** sheet and a **Read Me** sheet, or CSV). One row
 per dish:
 
 | Column | What to enter |
 |---|---|
-| Item Code | 2 to 12 letters, digits or hyphens, e.g. `ITEM-PTM-001`. Matches the dish when the file is imported again. Empty: one is made |
+| Item ID | 2 to 12 letters, digits or hyphens, e.g. `ITM-001`. Matches the dish when the file is imported again. Empty: one is made |
 | Item Name, Category Name | Required |
+| Category ID | Optional, e.g. `CAT-001`. A new ID or name creates the category; an existing one is used, never duplicated |
 | Item Description, Category Description | Optional |
 | Item Type (Veg/Non-veg) | Veg or Non-veg |
 | Base Price (INR) | A number; not needed with portions or an open price |
 | Open Price? (Yes/No) | Yes: the waiter types the price when ordering |
 | Tax Mode (Restaurant/Custom/None) | Custom uses Custom Tax Rate (%), added or included as the restaurant's tax setting says |
 | Item Status (Active/Inactive), Display Order (1 = First) | Optional |
-| Kitchen Terminals | `Main Kitchen \| Tandoor` (existing names) |
-| Portions and Prices, Add-ons and Prices | `Regular:220 \| Family:390` |
-| Suggested Item Codes (for Go Well With) | `ITEM-ROT-001 \| ITEM-BN-002`: on the menu already or further down the file |
+| Kitchen Terminals | `Main Kitchen\|Tandoor`. A kitchen not set up yet is created (and listed before importing) |
+| Portions and Prices, Add-ons and Prices | `Regular:220\|Large:320` (no spaces needed). One portion is a plain price |
+| Suggested Item IDs (for Go Well With) | `ITM-004\|ITM-005`: on the menu already or further down the file |
 
-Every row is checked and shown first; then "add new only" or "also update matching" (by Item Code, else by
-category and name). Rows with problems are left out and listed in a downloadable error report. Older files
-(one row per portion, `Name|Price` lists) are still read.
+Every row is checked and shown first (categories, dishes and new kitchens, with any problem); then "add new
+only" or "also update matching" (by Item ID, else by category and name; categories by Category ID, else
+name). Importing the same file again changes nothing. Rows with problems are left out and listed in a
+downloadable error report. Older files (one row per portion, `Name|Price` lists, "Item Code") are still read.
 
 ## How it fits together
 

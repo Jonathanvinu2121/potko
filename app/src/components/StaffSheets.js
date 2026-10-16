@@ -47,7 +47,7 @@ export function ResetPasswordSheet({ person, onClose, onDone }) {
       }
     >
       <Txt color="textSecondary">
-        Set a new password for {person?.name}. Their login ID stays {person?.login_id}.
+        Set a new password for {person?.name}. Their Staff ID stays {person?.login_id}.
       </Txt>
       <TextField label="New Password" required secure value={password} onChangeText={setPassword} placeholder="At least 6 characters" maxLength={60} />
       <Notice icon="logout" text="They are signed out on every device and sign in again with the new password. Tell them the password yourself: it is not sent anywhere." />

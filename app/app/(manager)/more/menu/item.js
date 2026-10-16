@@ -62,7 +62,7 @@ function PricedList({ rows, onChange, addLabel, namePlaceholder, max }) {
 }
 
 // Add or edit a dish, in the steps of the "finals" design:
-//   Details        picture, name, item code, description, category, display order, on/off
+//   Details        picture, name, Item ID, description, category, display order, on/off
 //   Pricing & Tax  base price, open price, the restaurant's tax or the dish's own
 //   Portions       Regular / Large / XL with their prices (dragged into order)
 //   Add-ons        one list of extras with their prices
@@ -140,13 +140,13 @@ export default function ItemForm() {
   const inCategory = items.filter((i) => i.category_id === form.category_id && i.id !== itemId).length + 1;
 
   // What still needs doing, and on which step.
-  // A new dish may be given its code; afterwards only an admin changes it (other files point at it).
+  // A new dish may be given its Item ID; afterwards only an admin changes it (other files point at it).
   const code = form.code.trim().toUpperCase();
   const codeEditable = !item || isAdmin;
   const problem = !form.name.trim()
     ? ['details', 'Enter the item name.']
     : code && codeEditable && !CODE.test(code)
-      ? ['details', 'An item code is 2 to 12 letters, digits or hyphens.']
+      ? ['details', 'An Item ID is 2 to 12 letters, digits or hyphens.']
     : !form.category_id
       ? ['details', 'Choose a category.']
       : !priceOk
@@ -235,9 +235,9 @@ export default function ItemForm() {
             <PictureField imageId={form.image_id} onChange={(image_id) => set({ image_id })} icon="food-outline" label="Add Image (Optional)" hint="Tap to upload or select image. JPG or PNG." />
             <TextField label="Item Name" required value={form.name} onChangeText={(name) => set({ name })} placeholder="e.g. Classic Burger" autoCapitalize="words" maxLength={80} />
             <View style={{ gap: 4 }}>
-              <TextField label="Item Code" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} placeholder="e.g. ITEM-PTM-001 (made for you if empty)" autoCapitalize="characters" maxLength={12} editable={codeEditable} />
+              <TextField label="Item ID" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} placeholder="e.g. ITM-001 (made for you if empty)" autoCapitalize="characters" maxLength={12} editable={codeEditable} />
               <Txt size={12} color="textSecondary">
-                {codeEditable ? 'Used in the menu file and in Goes Well With. 2 to 12 letters, digits or hyphens.' : 'Only an admin can change an item code.'}
+                {codeEditable ? 'Used in the menu file and in Goes Well With. 2 to 12 letters, digits or hyphens.' : 'Only an admin can change an Item ID.'}
               </Txt>
             </View>
             <TextField label="Description (Optional)" value={form.description} onChangeText={(description) => set({ description })} placeholder="e.g. Juicy grilled patty with fresh veggies" autoCapitalize="sentences" maxLength={200} />

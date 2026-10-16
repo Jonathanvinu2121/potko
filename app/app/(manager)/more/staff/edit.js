@@ -209,7 +209,7 @@ export default function StaffForm() {
     role: () => null,
     basic: () =>
       !form.name.trim() ? 'Enter their full name'
-        : !LOGIN.test(form.login_id.trim()) ? 'The login ID is 3 to 60 letters, digits, dots or dashes. An email address works too.'
+        : !LOGIN.test(form.login_id.trim()) ? 'The Staff ID is 3 to 60 letters, digits, dots or dashes. An email address works too.'
           : !id && form.password.length < 6 ? 'The password needs at least 6 characters'
             : id && form.password && form.password.length < 6 ? 'The new password needs at least 6 characters'
               : null,
@@ -245,7 +245,7 @@ export default function StaffForm() {
       if (id && !myself) body.active = form.active;
       if (myself) delete body.role;
       const { user } = id ? await api(`/users/${id}`, { method: 'PATCH', body }) : await api('/users', { method: 'POST', body });
-      toast(id ? `${user.name} saved` : `${user.name} added. Tell them their login ID and password.`, { tone: 'success', duration: id ? 2500 : 5000 });
+      toast(id ? `${user.name} saved` : `${user.name} added. Tell them their Staff ID and password.`, { tone: 'success', duration: id ? 2500 : 5000 });
       await load();
       router.back();
     } catch (err) {
@@ -257,7 +257,7 @@ export default function StaffForm() {
 
   const heading = {
     role: ['Role', 'Choose what this person does'],
-    basic: [title, 'Name, login and contact'],
+    basic: [title, 'Name, Staff ID and contact'],
     areas: ['Dining Area Access', 'Select which floors this staff can access'],
     tables: ['Table Access', 'Choose how many tables this staff can access'],
     payment: ['Payment Permission', 'Set payment related permission for this waiter'],
@@ -339,7 +339,12 @@ export default function StaffForm() {
           <>
             <PictureField round name={form.name} imageId={form.image_id} onChange={(image_id) => set({ image_id })} label="Add Photo (optional)" hint="JPG or PNG. Shown on the staff list." />
             <TextField label="Full Name" required value={form.name} onChangeText={(name) => set({ name })} placeholder="e.g. Karan Patel" autoCapitalize="words" maxLength={60} />
-            <TextField label="Email (Login)" required value={form.login_id} onChangeText={(login_id) => set({ login_id })} placeholder="e.g. karan@restaurant.com or W-108" maxLength={60} keyboardType="email-address" />
+            <View style={{ gap: 4 }}>
+              <TextField label="Staff ID" required value={form.login_id} onChangeText={(login_id) => set({ login_id: login_id.replace(/\s/g, '') })} placeholder="e.g. W-108" autoCapitalize="characters" maxLength={60} />
+              <Txt size={12} color="textSecondary">
+                They sign in with this Staff ID and the password below. An email address works too.
+              </Txt>
+            </View>
             <TextField label="Phone (Optional)" value={form.phone} onChangeText={(phone) => set({ phone })} placeholder="+91 98765 43210" keyboardType="phone-pad" maxLength={20} />
             <TextField label={id ? 'New Password' : 'Password'} required={!id} secure value={form.password} onChangeText={(password) => set({ password })} placeholder={id ? 'Leave blank to keep current' : 'At least 6 characters'} maxLength={60} />
             {id && form.password ? <Notice icon="logout" text="Setting a new password signs them out on every device." /> : null}
@@ -490,7 +495,7 @@ export default function StaffForm() {
             </Card>
             {form.role === 'waiter' && form.payment !== 'take' ? <Txt size={13} color="textSecondary">{PAYMENT[form.payment].text}.</Txt> : null}
             {id && !myself ? <SwitchRow title={form.active ? 'Active' : 'Inactive'} text="An inactive person cannot sign in. Their history is kept." value={form.active} onChange={(active) => set({ active })} /> : null}
-            {id ? null : <Notice icon="account-key-outline" text={`${form.name.trim() || 'They'} can sign in as soon as you add them. Tell them their login ID and password yourself: nothing is sent by SMS or email.`} />}
+            {id ? null : <Notice icon="account-key-outline" text={`${form.name.trim() || 'They'} can sign in as soon as you add them. Tell them their Staff ID and password yourself: nothing is sent by SMS or email.`} />}
           </>
         ) : null}
       </View>

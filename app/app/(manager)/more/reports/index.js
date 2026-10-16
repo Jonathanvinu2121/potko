@@ -183,7 +183,7 @@ function PersonRow({ rank, person, line, value, onPress }) {
           {person.name}
           {person.deleted ? <Txt size={12} color="textSecondary">{'  (left)'}</Txt> : null}
         </Txt>
-        <Txt size={12} color="textSecondary" numberOfLines={1}>
+        <Txt size={12} color="textSecondary" numberOfLines={2}>
           {line}
         </Txt>
       </View>
@@ -247,7 +247,7 @@ export default function Reports() {
     <Screen header={<AppHeader title="Reports" subtitle={data ? data.period.label : 'Sales, orders, menu and staff'} back />}>
       <View style={{ gap: 14 }}>
         <RangeBar period={period} onChange={setPeriod} />
-        <Tabs underline options={TABS} value={tab} onChange={setTab} />
+        <Tabs underline fit options={TABS} value={tab} onChange={setTab} />
         {!data ? (
           <ListState loading={!error} error={error} onRetry={load} rows={4} rowHeight={96} />
         ) : tab === 'overview' ? (

@@ -27,7 +27,7 @@ const ITEM_SELECT = `
     FROM menu_items m`;
 
 const CATEGORY_SELECT = `
-  SELECT c.id, c.name, c.prefix, c.sort, c.description, c.active, c.image_id,
+  SELECT c.id, c.name, c.code, c.prefix, c.sort, c.description, c.active, c.image_id,
          (SELECT count(*)::int FROM menu_items m WHERE m.category_id = c.id AND m.deleted_at IS NULL) AS item_count
     FROM categories c`;
 
@@ -152,7 +152,7 @@ async function ownCategory(q, restaurantId, categoryId) {
 async function ownTerminal(q, restaurantId, terminalId) {
   if (terminalId === null || terminalId === undefined || terminalId === '') return null;
   const { rows } = await q.query('SELECT id FROM kitchen_terminals WHERE id = $1 AND restaurant_id = $2', [Number(terminalId), restaurantId]);
-  if (!rows[0]) throw bad('Choose a kitchen terminal');
+  if (!rows[0]) throw bad('Choose a kitchen');
   return rows[0].id;
 }
 
@@ -162,7 +162,7 @@ async function ownTerminals(q, restaurantId, input) {
   const ids = [...new Set((Array.isArray(input) ? input : []).map(Number).filter(Number.isInteger))];
   if (ids.length === 0) return { terminal_id: null, terminal_ids: [] };
   const { rows } = await q.query('SELECT id FROM kitchen_terminals WHERE id = ANY($1::int[]) AND restaurant_id = $2', [ids, restaurantId]);
-  if (rows.length !== ids.length) throw bad('Choose the kitchen terminals again');
+  if (rows.length !== ids.length) throw bad('Choose the kitchens again');
   return { terminal_id: ids[0], terminal_ids: ids };
 }
 
@@ -207,7 +207,7 @@ async function setAddons(q, restaurantId, itemId, addonIds) {
   );
 }
 
-const uniqueCode = (err) => (err.code === '23505' ? new AppError(409, 'code_taken', 'Another item already uses that code') : err);
+const uniqueCode = (err) => (err.code === '23505' ? new AppError(409, 'code_taken', 'Another item already uses that Item ID') : err);
 const JSON_COLS = ['sizes', 'modifier_groups'];
 
 async function oneItem(q, restaurantId, id) {
@@ -247,12 +247,11 @@ async function placeItem(client, categoryId, itemId, position) {
 
 // POST /menu/items { category_id, code?, name, description?, veg, price, sizes, customisations, modifier_groups?,
 //                    tax_rate?, tax_mode?, terminal_id?, image_id?, available?, addonIds? }
-//   code  the dish's item code (2 to 12 letters, digits or hyphens); left out, one is made
+//   code  the dish's Item ID (2 to 12 letters, digits or hyphens); left out, one is made
 router.post('/items', manage, async (req, res) => {
   const { restaurantId } = req.user;
   const fields = readItem(req.body || {}, false);
-  const code = req.body?.code ? text(req.body.code, 13).toUpperCase() : null;
-  if (code && !/^[A-Z0-9-]{2,12}$/.test(code)) throw bad('An item code is 2 to 12 letters, digits or hyphens');
+  const code = readId(req.body?.code, 'An Item ID');
   const category = await ownCategory(db, restaurantId, req.body?.category_id);
   const routed = req.body?.terminal_ids !== undefined
     ? await ownTerminals(db, restaurantId, req.body.terminal_ids)
@@ -268,7 +267,7 @@ router.post('/items', manage, async (req, res) => {
   res.status(201).json({ item: await oneItem(db, restaurantId, id) });
 });
 
-// PATCH /menu/items/:id — any of the fields above; an admin may also change the code.
+// PATCH /menu/items/:id — any of the fields above; an admin may also change the Item ID.
 router.patch('/items/:id', manage, async (req, res) => {
   const { restaurantId } = req.user;
   const before = await oneItem(db, restaurantId, Number(req.params.id));
@@ -283,9 +282,9 @@ router.patch('/items/:id', manage, async (req, res) => {
     fields.terminal_ids = fields.terminal_id ? [fields.terminal_id] : [];
   }
   if (req.body?.code !== undefined && String(req.body.code).trim().toUpperCase() !== before.code.toUpperCase()) {
-    if (!can(req.user, 'staff.admin')) throw new AppError(403, 'forbidden', 'Only an admin can change a code');
-    fields.code = text(req.body.code, 13).toUpperCase();
-    if (!/^[A-Z0-9-]{2,12}$/.test(fields.code)) throw bad('An item code is 2 to 12 letters, digits or hyphens');
+    if (!can(req.user, 'staff.admin')) throw new AppError(403, 'forbidden', 'Only an admin can change an Item ID');
+    fields.code = readId(req.body.code, 'An Item ID');
+    if (!fields.code) throw bad('An Item ID cannot be empty');
   }
   await db.tx(async (client) => {
     const cols = Object.keys(fields);
@@ -380,8 +379,19 @@ router.delete('/items/:id', manage, async (req, res) => {
 
 // ---- Categories ----
 
+// An Item ID or Category ID: 2 to 12 letters, digits or hyphens (ITM-001, CAT-001), kept in capitals.
+const ID_RULE = /^[A-Z0-9-]{2,12}$/;
+function readId(value, what) {
+  const id = text(value, 13).toUpperCase();
+  if (!id) return null;
+  if (!ID_RULE.test(id)) throw bad(`${what} is 2 to 12 letters, digits or hyphens`);
+  return id;
+}
+const idTaken = (what) => (err) => { throw err.code === '23505' ? new AppError(409, 'code_taken', `Another ${what} already uses that ID`) : err; };
+
 function readCategory(body, partial) {
   const out = {};
+  if (body.code !== undefined) out.code = readId(body.code, 'A Category ID');
   if (!partial || body.name !== undefined) {
     out.name = text(body.name, 40);
     if (!out.name) throw bad('Give the category a name');
@@ -410,11 +420,11 @@ async function insertCategory(client, restaurantId, userId, fields, { position =
   if (same.rows[0]) throw new AppError(409, 'name_taken', `There is already a category named ${fields.name}`);
   const prefix = await makePrefix(client, restaurantId, fields.name);
   const { rows } = await client.query(
-    `INSERT INTO categories (restaurant_id, name, prefix, description, active, image_id, sort)
-     VALUES ($1, $2, $3, $4, $5, $6, (SELECT COALESCE(max(sort), 0) + 1 FROM categories WHERE restaurant_id = $1))
+    `INSERT INTO categories (restaurant_id, name, prefix, description, active, image_id, code, sort)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT COALESCE(max(sort), 0) + 1 FROM categories WHERE restaurant_id = $1))
      RETURNING id`,
-    [restaurantId, fields.name, prefix, fields.description ?? null, fields.active ?? true, fields.image_id ?? null]
-  );
+    [restaurantId, fields.name, prefix, fields.description ?? null, fields.active ?? true, fields.image_id ?? null, fields.code ?? null]
+  ).catch(idTaken('category'));
   if (Number.isInteger(position) && position > 0) await placeCategory(client, restaurantId, rows[0].id, position);
   await audit(client, { restaurantId, userId, action, entity: 'category', entityId: rows[0].id, new: { ...fields, prefix } });
   return rows[0].id;
@@ -429,7 +439,7 @@ router.post('/categories', manage, async (req, res) => {
   res.status(201).json({ category: await oneCategory(db, restaurantId, id) });
 });
 
-// PATCH /menu/categories/:id { name?, description?, active?, position?, image_id? }
+// PATCH /menu/categories/:id { name?, code?, description?, active?, position?, image_id? }
 router.patch('/categories/:id', manage, async (req, res) => {
   const { restaurantId } = req.user;
   const id = Number(req.params.id);
@@ -442,7 +452,7 @@ router.patch('/categories/:id', manage, async (req, res) => {
       if (same.rows[0]) throw new AppError(409, 'name_taken', `There is already a category named ${fields.name}`);
     }
     const cols = Object.keys(fields);
-    if (cols.length) await client.query(`UPDATE categories SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...cols.map((c) => fields[c])]);
+    if (cols.length) await client.query(`UPDATE categories SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...cols.map((c) => fields[c])]).catch(idTaken('category'));
     const position = Number(req.body?.position);
     if (Number.isInteger(position) && position > 0) await placeCategory(client, restaurantId, id, position);
     await audit(client, { restaurantId, userId: req.user.id, action: 'category.edit', entity: 'category', entityId: id, old: Object.fromEntries(cols.map((c) => [c, before[c]])), new: { name: before.name, ...fields } });

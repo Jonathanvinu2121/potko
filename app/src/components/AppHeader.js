@@ -88,11 +88,11 @@ export function AppHeader({ title, subtitle, back, onBack, right, crumbs }) {
               {online ? '' : status === 'connecting' ? ' · Connecting…' : ' · Offline'}
             </Txt>
           </Pressable>
-          <Txt size={20} weight={700} numberOfLines={1}>
+          <Txt size={20} weight={700} numberOfLines={2}>
             {title}
           </Txt>
           {subtitle ? (
-            <Txt size={13} color="textSecondary" numberOfLines={1}>
+            <Txt size={13} color="textSecondary" numberOfLines={2}>
               {subtitle}
             </Txt>
           ) : null}

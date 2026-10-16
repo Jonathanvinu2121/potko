@@ -265,7 +265,7 @@ export default function Overview() {
               >
                 <IconTile icon={row.icon} tone={row.tone} size={38} solid />
                 <View style={{ flex: 1 }}>
-                  <Txt size={15} weight={600} numberOfLines={1}>
+                  <Txt size={15} weight={600} numberOfLines={2}>
                     {row.title}
                   </Txt>
                   <Txt size={13} color="textSecondary" numberOfLines={2}>

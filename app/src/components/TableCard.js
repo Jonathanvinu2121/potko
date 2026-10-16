@@ -36,9 +36,9 @@ function StateLine({ table, taken, freeText }) {
     );
   }
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4 }}>
       {!free ? <Icon name={status.icon} size={14} color={TEXT[status.tone]} /> : null}
-      <Txt size={12} weight={600} color={free ? 'text' : TEXT[status.tone]} numberOfLines={1} style={{ flexShrink: 1 }}>
+      <Txt size={12} weight={600} color={free ? 'text' : TEXT[status.tone]} numberOfLines={2} style={{ flexShrink: 1 }}>
         {free ? freeText : status.short}
       </Txt>
     </View>

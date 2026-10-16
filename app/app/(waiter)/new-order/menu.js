@@ -21,7 +21,7 @@ import { VegMark } from '../../../src/components/VegMark';
 import { ItemSheet } from '../../../src/components/ItemSheet';
 
 // W4 Menu: opens on a grid of categories; a category opens a grid of its dishes.
-// Search by name or code and the most-ordered shortcuts work from either page.
+// Search by name or Item ID and the most-ordered shortcuts work from either page.
 export default function Menu() {
   const t = useTheme();
   const prices = usePrices();
@@ -66,7 +66,7 @@ export default function Menu() {
     [items]
   );
 
-  // Name or code, upper or lower case: "imc14" and "chicken" both find Chicken Tikka.
+  // Name or Item ID, upper or lower case: "itm-001" and "paneer" both find it.
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter(
@@ -111,7 +111,7 @@ export default function Menu() {
         })}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-          <Chip label={category.prefix} tone="primary" size={12} />
+          <Chip label={category.code || category.prefix} tone="primary" size={12} />
           <Icon name="chevron-right" color="textSecondary" />
         </View>
         <View style={{ gap: 2 }}>
@@ -233,7 +233,7 @@ export default function Menu() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search name or code (e.g. IMC14)"
+            placeholder="Search dish name or Item ID"
             placeholderTextColor={t.c.textSecondary}
             accessibilityLabel="Search the menu"
             autoCapitalize="none"
@@ -325,7 +325,7 @@ export default function Menu() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ flexGrow: 1, gap: 10, paddingTop: 10, paddingBottom: 12 }}
           ListEmptyComponent={
-            <EmptyState icon="magnify" title="Nothing matches" text={searching ? 'Try a different name or code.' : 'This category has no dishes yet.'} />
+            <EmptyState icon="magnify" title="Nothing matches" text={searching ? 'Try a different name or Item ID.' : 'This category has no dishes yet.'} />
           }
         />
       )}

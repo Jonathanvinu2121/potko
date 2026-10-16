@@ -31,11 +31,11 @@ test('rows of one item fold into portions and add-ons', async () => {
   assert.equal(records.items.length, 1);
   const item = records.items[0];
   assert.deepEqual(item.sizes, [{ label: 'Half', price: 180 }, { label: 'Full', price: 320 }]);
-  assert.equal(item.price, 320);
+  assert.equal(item.price, 180); // no base price in the file: the first portion's
   assert.deepEqual(item.groups, [{ name: 'Extras', required: false, min: 0, max: 2, options: [{ name: 'Extra Cheese', price: 30 }, { name: 'Mint Chutney', price: 10 }] }]);
   assert.equal(item.terminal_id, 2);
   assert.equal(item.status, 'new');
-  assert.deepEqual(counts, { new: 1, update: 0, error: 0, warnings: 0, categories: 0, items: 1 });
+  assert.deepEqual(counts, { new: 1, update: 0, error: 0, warnings: 0, categories: 0, items: 1, kitchens: 0 });
 });
 
 test('the compact "Regular|180,Large|240" style is read too', async () => {
@@ -77,9 +77,13 @@ test('an item already on the menu is matched by its code and shows what would ch
   assert.deepEqual(records.items[0].changes, [{ field: 'Price', old: '140', new: '160' }]);
 });
 
-test('an unknown terminal is an error, never a silent fallback', async () => {
-  const { records } = await check('category_name,item_name,portion_price,kitchen_terminal\nStarters,Soup,90,Grill');
-  assert.match(records.items[0].errors[0], /Kitchen terminal "Grill" does not exist/);
+test('a kitchen the restaurant does not have yet is created with the import, never a silent fallback', async () => {
+  const { records, counts } = await check('category_name,item_name,portion_price,kitchen_terminal\nStarters,Soup,90,Grill|Tandoor');
+  assert.deepEqual(records.items[0].errors, []);
+  assert.deepEqual(records.items[0].terminal_ids, [2]); // Tandoor exists
+  assert.deepEqual(records.items[0].new_kitchens, ['Grill']);
+  assert.deepEqual(records.new_kitchens, ['Grill']);
+  assert.equal(counts.kitchens, 1);
 });
 
 test('categories: new, existing and broken rows', async () => {
@@ -112,20 +116,20 @@ test('the menu template (one file for categories and items) can be read back by 
   for (const kind of ['categories', 'items']) {
     const file = await importer.template(kind, 'xlsx');
     const sheets = await importer.readFile('template.xlsx', file.toString('base64'));
-    assert.deepEqual(sheets.map((s) => s.sheet), ['Menu Items', 'Column Guide']);
+    assert.deepEqual(sheets.map((s) => s.sheet), ['Menu Import', 'Read Me']);
     const records = importer.buildRecords(sheets, kind, null);
     assert.deepEqual(records.missing, []);
-    assert.equal(records.mapping.filter(Boolean).length, 16); // every column is read
-    assert.equal(records.categories.length, 2);
-    assert.equal(records.items.length, kind === 'items' ? 3 : 0); // a categories import reads only the category columns
+    assert.equal(records.mapping.filter(Boolean).length, 17); // every column is read
+    assert.equal(records.categories.length, 6);
+    assert.equal(records.items.length, 9); // one import: started from Add Category or "+ Add", the dishes come too
   }
   const csv = await importer.template('items', 'csv');
   const records = importer.buildRecords(await importer.readFile('t.csv', csv.toString('base64')), 'items', null);
-  assert.equal(records.items.find((i) => i.code === 'ITEM-PTM-001').sizes.length, 2);
+  assert.equal(records.items.find((i) => i.code === 'ITM-001').sizes.length, 2);
 });
 
-test('the template format: Name:Price lists, several kitchens, open price, tax choice and go well with', async () => {
-  const head = 'Item Code,Item Name,Category Name,Item Type (Veg/Non-veg),Base Price (INR),Open Price? (Yes/No),Tax Mode (Restaurant/Custom/None),Custom Tax Rate (%),Kitchen Terminals,Portions and Prices,Add-ons and Prices,Suggested Item Codes (for Go Well With)';
+test('the combined format: Name:Price lists, several kitchens, open price, tax choice and go well with', async () => {
+  const head = 'Item ID,Item Name,Category Name,Item Type (Veg/Non-veg),Base Price (INR),Open Price? (Yes/No),Tax Mode (Restaurant/Custom/None),Custom Tax Rate (%),Kitchen Terminals,Portions and Prices,Add-ons and Prices,Suggested Item IDs (for Go Well With)';
   const { records } = await check([
     head,
     'ITEM-PTM-001,Paneer Tikka Masala,Starters,Veg,220,No,Restaurant,,Tandoor | Main Kitchen,Regular:220 | Family:390,Extra Gravy:30 | Extra Cheese:25,ITEM-SR-002 | STR01 | NOPE-1',

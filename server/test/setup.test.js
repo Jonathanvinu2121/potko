@@ -79,3 +79,43 @@ test('the setup code is checked, then the restaurant and its admin are created a
   assert.deepEqual(sync.data.areas.map((a) => a.name), ['Main Hall']);
   assert.deepEqual(sync.data.terminals.map((k) => k.name), ['Main Kitchen']);
 });
+
+test('the new restaurant imports the combined menu file: categories, dishes, kitchens and links, once', async () => {
+  const login = await call(base, '/auth/login', { method: 'POST', body: { loginId: 'owner-1', password: 'test-pass-123', role: 'admin' } });
+  const token = login.data.token;
+  const file = await call(base, '/menu/import/template?kind=categories&format=xlsx', { token }); // started from Add Category
+  const preview = await call(base, '/menu/import/preview', { token, method: 'POST', body: { kind: 'categories', filename: 'POTKO_Menu_Import_Template.xlsx', data: Buffer.from(file.data).toString('base64') } });
+  assert.equal(preview.status, 200);
+  assert.deepEqual(preview.data.counts, { new: 15, update: 0, error: 0, warnings: 0, categories: 6, items: 9, kitchens: 3 });
+
+  const done = await call(base, `/menu/import/${preview.data.id}/commit`, { token, method: 'POST', body: { mode: 'create' } });
+  assert.equal(done.data.summary.created, 15);
+  assert.deepEqual(done.data.summary.kitchens, ['Tandoor', 'Starters', 'Beverages']);
+
+  const { categories, items } = (await call(base, '/menu?all=1', { token })).data;
+  const sync = (await call(base, '/sync', { token })).data;
+  const dish = (id) => items.find((i) => i.code === id);
+  const kitchen = (name) => sync.terminals.find((k) => k.name === name).id;
+  assert.deepEqual(categories.map((c) => `${c.code} ${c.name}`), ['CAT-001 Indian Main Course', 'CAT-002 Breads', 'CAT-003 Rice & Biryani', 'CAT-004 Starters & Sides', 'CAT-005 Drinks', 'CAT-006 Specials']);
+  assert.equal(categories[0].description, 'Curries and gravy-based main-course dishes.');
+  // Base price kept, portions with their own prices, one portion = a plain price.
+  assert.equal(dish('ITM-001').price, 220);
+  assert.deepEqual(dish('ITM-001').sizes, [{ label: 'Regular', price: 220 }, { label: 'Large', price: 320 }]);
+  assert.deepEqual([dish('ITM-007').price, dish('ITM-007').sizes], [60, []]);
+  assert.deepEqual(dish('ITM-001').modifier_groups[0].options, [{ name: 'Extra Gravy', price: 30 }, { name: 'Extra Paneer', price: 50 }]);
+  // Kitchens, tax, status, display order and Go Well With.
+  assert.deepEqual(dish('ITM-004').terminal_ids, [kitchen('Tandoor')]);
+  assert.deepEqual(dish('ITM-008').terminal_ids, [kitchen('Beverages')]);
+  assert.equal(dish('ITM-008').tax_rate, 5);
+  assert.equal(dish('ITM-001').tax_rate, null);
+  assert.equal(dish('ITM-009').available, false);
+  assert.equal(dish('ITM-002').veg, false);
+  assert.deepEqual(dish('ITM-001').addon_ids.sort(), [dish('ITM-004').id, dish('ITM-005').id].sort());
+  assert.deepEqual(items.filter((i) => i.category_id === categories[0].id).map((i) => i.code), ['ITM-001', 'ITM-002', 'ITM-003']);
+
+  // The same file again changes nothing, even with "update matching".
+  const again = await call(base, '/menu/import/preview', { token, method: 'POST', body: { kind: 'items', filename: 'menu.xlsx', data: Buffer.from(file.data).toString('base64') } });
+  assert.deepEqual([again.data.counts.new, again.data.counts.error, again.data.counts.kitchens], [0, 0, 0]);
+  const second = await call(base, `/menu/import/${again.data.id}/commit`, { token, method: 'POST', body: { mode: 'update' } });
+  assert.deepEqual([second.data.summary.created, second.data.summary.updated], [0, 0]);
+});
