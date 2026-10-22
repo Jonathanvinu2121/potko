@@ -1,0 +1,25 @@
+# Wakes the online server just before opening, so the first phone of the day does not wait a minute.
+# Render puts the free server to sleep after 15 minutes without use. During opening hours the server
+# keeps itself awake (server/src/keep-awake.js), but a sleeping server cannot wake itself.
+# Two tries, 08:52 and 09:07 India time, because GitHub can start a scheduled job late or skip one.
+# If the opening hours change (KEEP_AWAKE_HOURS on Render), move these two times with them.
+name: Wake the server before opening
+
+on:
+  schedule:
+    - cron: '22 3 * * *' # 08:52 in India (UTC+5:30)
+    - cron: '37 3 * * *' # 09:07
+  workflow_dispatch: # the "Run workflow" button, to try it by hand
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Ask the server for /health until it answers (waking takes about a minute)
+        run: |
+          for try in 1 2 3; do
+            if curl --fail --silent --show-error --max-time 90 https://potko-server.onrender.com/health; then exit 0; fi
+            sleep 15
+          done
+          exit 1

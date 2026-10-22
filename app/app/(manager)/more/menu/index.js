@@ -66,7 +66,7 @@ function CategorySheet({ category, count, visible, onClose }) {
     >
       <PictureField imageId={form.image_id} onChange={(image_id) => set({ image_id })} icon="shape-outline" hint="JPG or PNG. Shown next to the category." />
       <TextField label="Category Name" required value={form.name} onChangeText={(name) => set({ name })} placeholder="e.g. Burgers" autoCapitalize="words" maxLength={40} />
-      <TextField label="Category ID (optional)" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} placeholder="e.g. CAT-001, as in the menu file" autoCapitalize="characters" maxLength={12} />
+      <TextField label="Category ID (optional)" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })} placeholder="e.g. CAT-001, as in the menu file" autoCapitalize="characters" maxLength={12} />
       <TextField label="Description (optional)" value={form.description} onChangeText={(description) => set({ description })} placeholder="e.g. Delicious burgers, sandwiches" autoCapitalize="sentences" maxLength={120} />
       <NumberRow label="Display Order" value={form.position} min={1} max={Math.max(1, count + (category ? 0 : 1))} onChange={(position) => set({ position })} unit="1 is shown first" />
       <SwitchRow title={form.active ? 'Active' : 'Inactive'} text="Inactive categories do not appear for waiters" value={form.active} onChange={(active) => set({ active })} />

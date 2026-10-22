@@ -9,6 +9,12 @@ const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 2000;
 const bad = (message) => new AppError(400, 'bad_file', message);
 
+// An Item ID or Category ID: the restaurant's own short code, kept in capitals (ITM-001, CAT-001,
+// 101, A_1). The dish form and the category form use the same rule.
+const ID_RULE = /^[A-Z0-9_-]{1,12}$/;
+const ID_TEXT = '1 to 12 letters, digits, hyphens or underscores';
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
 // ---------- Reading the file ----------
 
 // A small CSV reader: quoted fields, doubled quotes, commas and line breaks inside quotes, and
@@ -124,15 +130,18 @@ const REQUIRED = { categories: ['category_name'], items: ['item_name', 'category
 
 const norm = (s) => String(s).toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[*()?]/g, ' ').replace(/[_\s]+/g, ' ').trim();
 
-// Guesses which field each heading is. In a categories-only file "name" means the category.
+// Guesses which field each heading is. A plain "Name" is the dish's name when the file also has a
+// Category column (whichever button started the import); only a categories-only file, started
+// from Add Category, uses "Name" and "Description" for the category.
 function guessMapping(headers, kind) {
-  const hasItemName = headers.some((h) => ['item name', 'item', 'dish', 'dish name'].includes(norm(h)));
+  const heads = headers.map(norm);
+  const hasCategory = heads.some((h) => FIELDS.category_name.also.includes(h));
+  const namesDishes = heads.some((h) => ['item name', 'item', 'dish', 'dish name', 'product'].includes(h)) || (hasCategory && heads.includes('name'));
   const used = new Set();
-  return headers.map((header) => {
-    const h = norm(header);
+  return heads.map((h) => {
     if (!h) return null;
     let field = Object.keys(FIELDS).find((f) => norm(f) === h) || Object.keys(FIELDS).find((f) => FIELDS[f].also.includes(h));
-    if (kind === 'categories' && !hasItemName) {
+    if (kind === 'categories' && !namesDishes) {
       if (['name', 'category'].includes(h)) field = 'category_name';
       else if (h === 'description') field = 'category_description';
       else if (['display order', 'order', 'sort'].includes(h)) field = 'category_display_order';
@@ -211,21 +220,31 @@ function sheetObjects(sheet, kind, chosen) {
   return { headers, mapping, missing, objects };
 }
 
-const sameKey = (s) => String(s || '').trim().toLowerCase();
+// Names are matched without regard to capitals or extra spaces: "Breads", " breads " and
+// "BREADS" are one category. Different words stay different categories.
+const sameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+const tidy = (s, max) => String(s || '').trim().replace(/\s+/g, ' ').slice(0, max);
 
-// Builds category records: one per name, with any problems found.
+// Builds category records: one per category, with any problems found. A category written on some
+// rows with its Category ID and on others without it is still one category.
 function buildCategories(objects) {
-  const byName = new Map();
+  const list = [];
   for (const o of objects) {
-    const name = String(o.category_name || '').trim().slice(0, 40);
+    const name = tidy(o.category_name, 40);
     const code = String(o.category_code || '').trim().toUpperCase().slice(0, 13);
     if (!name && CATEGORY_FIELDS.every((f) => !o[f])) continue;
-    const key = code ? `code:${code}` : `name:${sameKey(name)}`;
-    const rec = byName.get(key) || { rows: [], name, code: code || null, description: null, position: null, active: null, errors: [], warnings: [] };
+    let rec = (code && list.find((r) => r.code === code)) || (name && list.find((r) => sameKey(r.name) === sameKey(name) && (!code || !r.code))) || null;
+    const twin = !rec && code && name ? list.find((r) => sameKey(r.name) === sameKey(name)) : null;
+    if (!rec) {
+      rec = { rows: [], name, code: code || null, description: null, position: null, active: null, errors: [], warnings: [] };
+      list.push(rec);
+      if (twin) rec.errors.push(`Category "${name}" is written with two Category IDs (${twin.code} and ${code})`);
+    }
     rec.rows.push(o._row);
-    if (!name) rec.errors.push('Category name is missing');
-    else if (rec.name && sameKey(rec.name) !== sameKey(name) && !rec.errors.some((e) => e.includes('two names'))) rec.errors.push(`Category ID ${code} is used with two names ("${rec.name}" and "${name}")`);
-    if (code && !/^[A-Z0-9-]{2,12}$/.test(code) && !rec.errors.some((e) => e.includes('Category ID "'))) rec.errors.push(`Category ID "${code}" should be 2 to 12 letters, digits or hyphens`);
+    if (code && !rec.code) rec.code = code;
+    if (name && !rec.name) rec.name = name;
+    else if (name && sameKey(rec.name) !== sameKey(name) && !rec.errors.some((e) => e.includes('two names'))) rec.errors.push(`Category ID ${code} is used with two names ("${rec.name}" and "${name}")`);
+    if (code && !ID_RULE.test(code) && !rec.errors.some((e) => e.includes('Category ID "'))) rec.errors.push(`Category ID "${code}" should be ${ID_TEXT}`);
     if (o.category_description) rec.description = String(o.category_description).slice(0, 120);
     if (o.category_display_order) {
       const n = Number(o.category_display_order);
@@ -237,22 +256,24 @@ function buildCategories(objects) {
       if (b === undefined) rec.errors.push(`Active "${o.category_active}" should be TRUE or FALSE`);
       else if (b !== null) rec.active = b;
     }
-    byName.set(name || code ? key : `row-${o._row}`, rec);
   }
-  return [...byName.values()];
+  for (const rec of list) if (!rec.name) rec.errors.push('Category name is missing');
+  return list;
 }
 
 // Builds item records from flat rows: rows of the same item (same code, or same category and
-// name) are folded into one item with several portions and add-ons.
+// name) are folded into one item with several portions and add-ons. A row that repeats a dish
+// and adds nothing to it is counted once, and said so.
 function buildItems(objects) {
   const byKey = new Map();
+  const extras = (rec) => rec.sizes.length + rec.groups.reduce((n, g) => n + g.options.length, 0);
   for (const o of objects) {
-    const name = String(o.item_name || '').trim().slice(0, 80);
+    const name = tidy(o.item_name, 80);
     const code = String(o.item_code || '').trim().toUpperCase().slice(0, 13);
-    const category = String(o.category_name || '').trim().slice(0, 40);
+    const category = tidy(o.category_name, 40);
     const categoryCode = String(o.category_code || '').trim().toUpperCase().slice(0, 13);
     if (!name && !code && !o.portion_price && !o.addon_name) continue; // a category-only row
-    const key = code ? `code:${code}` : `name:${sameKey(category)}|${sameKey(name)}`;
+    const key = code ? `code:${code}` : `name:${sameKey(category || categoryCode)}|${sameKey(name)}`;
     let rec = byKey.get(key);
     if (!rec) {
       rec = {
@@ -261,14 +282,17 @@ function buildItems(objects) {
       };
       byKey.set(key, rec);
     }
+    const repeat = rec.rows.length > 0;
+    const had = extras(rec);
     rec.rows.push(o._row);
     const at = `Row ${o._row}: `;
     if (!name) rec.errors.push(`${at}item name is missing`);
     else if (rec.name && sameKey(rec.name) !== sameKey(name)) rec.warnings.push(`${at}Item ID ${code} is used with two names ("${rec.name}" and "${name}"); the first is kept`);
     if (!rec.name) rec.name = name;
-    if (!category && !rec.category) rec.errors.push(`${at}category is missing`);
+    if (!category && !categoryCode && !rec.category && !rec.category_code) rec.errors.push(`${at}category is missing`);
     if (category && !rec.category) rec.category = category;
-    if (code && !/^[A-Z0-9-]{2,12}$/.test(code)) rec.errors.push(`${at}Item ID "${code}" should be 2 to 12 letters, digits or hyphens`);
+    if (categoryCode && !rec.category_code) rec.category_code = categoryCode;
+    if (code && !ID_RULE.test(code)) rec.errors.push(`${at}Item ID "${code}" should be ${ID_TEXT}`);
 
     if (o.item_description) rec.description = String(o.item_description).slice(0, 200);
     if (o.item_image_url) rec.image_url = String(o.item_image_url).slice(0, 300);
@@ -343,6 +367,17 @@ function buildItems(objects) {
       }
     }
     for (const p of problems) rec.errors.push(at + p);
+
+    // The same dish again with no portion or add-on of its own: a repeated row, not a new dish.
+    if (repeat && problems.length === 0 && extras(rec) === had) {
+      const again = o.portion_price !== undefined && o.portion_price !== '' ? readPrice(o.portion_price) : NaN;
+      rec.repeats = (rec.repeats || 0) + 1;
+      rec.warnings.push(
+        !Number.isNaN(again) && rec.price !== null && again !== rec.price
+          ? `${at}${rec.name} is already on row ${rec.rows[0]} with price ${rec.price}; this row's price ${again} was left out`
+          : `${at}repeats ${rec.name} from row ${rec.rows[0]}; it is counted once`
+      );
+    }
   }
 
   for (const rec of byKey.values()) {
@@ -417,6 +452,7 @@ function buildRecords(sheets, kind, chosen) {
       headers,
       mapping,
       missing,
+      row_count: objects.length,
       // One import for the whole menu: the categories named in the file (new ones are created) and,
       // when the file has dishes, the dishes. Add Category and "+ Add" open the same import.
       categories: buildCategories(objects),
@@ -439,12 +475,14 @@ function buildRecords(sheets, kind, chosen) {
     }
   }
   const categorySheet = find('categories');
-  const categories = categorySheet ? buildCategories(sheetObjects(categorySheet, 'categories', null).objects) : [];
+  const categoryRows = categorySheet ? sheetObjects(categorySheet, 'categories', null).objects : [];
+  const categories = buildCategories(categoryRows);
   return {
     sheet: itemsSheet.sheet,
     headers: main.headers,
     mapping: main.mapping,
     missing: main.missing,
+    row_count: objects.length + orphans.length + categoryRows.length,
     categories,
     items: buildItems(objects),
     declaredCategories: !!categorySheet,
@@ -456,12 +494,22 @@ function buildRecords(sheets, kind, chosen) {
 
 // existing: { categories: [{ id, name, ... }], items: [{ id, code, name, category_id, ... }], terminals: [{ id, name, active }] }
 // Marks every record 'new', 'update' (it matches something on the menu) or 'error', and for an
-// update lists what would change.
-function classify(records, existing, kind) {
+// update lists what would change. Each dish is tied to its category: one on the menu already
+// (category_match_id), or one that comes with the file (category_key).
+function classify(records, existing) {
+  // Problems that depend on the menu as it is now, not on the file, are worked out afresh each
+  // time: the menu may have changed between the preview and the import.
+  for (const r of [...records.categories, ...records.items]) {
+    if (r.derived?.length) r.errors = r.errors.filter((e) => !r.derived.includes(e));
+    r.derived = [];
+  }
+  const derive = (r, message) => { r.errors.push(message); r.derived.push(message); };
   const catByName = new Map(existing.categories.map((c) => [sameKey(c.name), c]));
   const catByCode = new Map(existing.categories.filter((c) => c.code).map((c) => [sameKey(c.code), c]));
   const findCategory = (code, name) => (code && catByCode.get(sameKey(code))) || (name && catByName.get(sameKey(name))) || null;
-  const incoming = new Set(records.categories.filter((c) => c.errors.length === 0).flatMap((c) => [sameKey(c.name), c.code ? `code:${sameKey(c.code)}` : null]).filter(Boolean));
+  const keyOf = (c) => (c.code ? `code:${sameKey(c.code)}` : `name:${sameKey(c.name)}`);
+  // The category record of this file that a dish belongs to: by Category ID, else by name.
+  const inFile = (item) => records.categories.find((c) => (item.category_code && c.code ? sameKey(c.code) === sameKey(item.category_code) : sameKey(c.name) === sameKey(item.category)));
   const termByName = new Map(existing.terminals.map((t) => [sameKey(t.name), t]));
   // Kitchens named in the file that the restaurant does not have yet are created with it.
   records.new_kitchens = [];
@@ -481,17 +529,24 @@ function classify(records, existing, kind) {
       if (c.active !== null && c.active !== match.active) c.changes.push({ field: 'Active', old: match.active ? 'Yes' : 'No', new: c.active ? 'Yes' : 'No' });
       if (c.position !== null && c.position !== match.sort) c.changes.push({ field: 'Display order', old: String(match.sort), new: String(c.position) });
     }
+    c.key = keyOf(c);
     c.status = c.errors.length ? 'error' : match ? 'update' : 'new';
   }
   // A category already on the menu with nothing to change is not shown (every dish row names one).
   records.categories = records.categories.filter((c) => !(c.status === 'update' && c.changes.length === 0));
 
+  const reused = new Map(); // categories on the menu that dishes of this file go into
   for (const item of records.items) {
     const category = findCategory(item.category_code, item.category);
-    // The category must be on the menu already, or come in the same file as a category of its own.
-    const comes = (incoming.has(sameKey(item.category)) || (item.category_code && incoming.has(`code:${sameKey(item.category_code)}`))) && records.declaredCategories;
-    if (item.category && !category && !comes && !(kind === 'categories')) {
-      item.errors.push(`Category "${item.category}" does not exist. Add it first, or include it in a Categories sheet.`);
+    const own = category ? null : inFile(item);
+    item.category_match_id = category?.id ?? null;
+    item.category_key = own ? own.key : null;
+    // The category is on the menu already, or comes in this file; if it cannot be imported, its
+    // dishes cannot either, and each says why.
+    if (!category) {
+      const label = item.category || item.category_code;
+      if (own?.errors.length) derive(item, `Its category "${own.name || label}" cannot be imported (${own.errors[0]}), so this dish is left out`);
+      else if (!own && label) derive(item, records.declaredCategories ? `Category "${label}" is not on the menu or in the Categories sheet` : `Category "${label}" does not exist. Add it first, or include it in a Categories sheet.`);
     }
     item.terminal_ids = [];
     item.new_kitchens = [];
@@ -509,6 +564,10 @@ function classify(records, existing, kind) {
     }
     const match = (item.code && itemByCode.get(sameKey(item.code))) || (category && itemByName.get(`${category.id}|${sameKey(item.name)}`)) || null;
     item.match_id = match?.id ?? null;
+    // What it matched, so a skipped row can say so ("Item ID 101 is already used by Masala Dosa").
+    item.match_name = match?.name ?? null;
+    item.match_category = match ? existing.categories.find((c) => c.id === match.category_id)?.name ?? null : null;
+    item.match_by = !match ? null : item.code && sameKey(match.code) === sameKey(item.code) ? 'code' : 'name';
     item.changes = [];
     if (match) {
       const priceText = (sizes, price) => (sizes?.length ? sizes.map((s) => `${s.label} ${s.price}`).join(', ') : String(price));
@@ -532,7 +591,20 @@ function classify(records, existing, kind) {
       else if (!category && item.category) item.changes.push({ field: 'Category', old: existing.categories.find((c) => c.id === match.category_id)?.name || '', new: item.category });
     }
     item.status = item.errors.length ? 'error' : match ? 'update' : 'new';
+    if (category && item.status !== 'error') reused.set(category.id, category.name);
   }
+
+  // A new category comes with its dishes: when every dish the file gives it has a problem, it is
+  // left out too, with the reason, instead of being created empty.
+  for (const c of records.categories) {
+    if (c.status !== 'new') continue;
+    const mine = records.items.filter((i) => i.category_key === c.key);
+    if (mine.length > 0 && mine.every((i) => i.status === 'error')) {
+      derive(c, `Not created: none of its ${plural(mine.length, 'dish', 'dishes')} can be imported (see ${mine.length === 1 ? 'its row' : 'their rows'})`);
+      c.status = 'error';
+    }
+  }
+  records.reused = [...reused.values()];
 
   const count = (list, status) => list.filter((r) => r.status === status).length;
   const all = [...records.categories, ...records.items];
@@ -541,6 +613,10 @@ function classify(records, existing, kind) {
     update: count(all, 'update'),
     error: count(all, 'error'),
     warnings: all.reduce((n, r) => n + r.warnings.length, 0),
+    rows: records.row_count ?? null,
+    error_rows: new Set(all.filter((r) => r.status === 'error').flatMap((r) => r.rows)).size + (records.orphans || []).length,
+    new_categories: count(records.categories, 'new'),
+    reused: records.reused.length,
     categories: records.categories.length,
     items: records.items.length,
     kitchens: records.new_kitchens.length,
@@ -575,7 +651,7 @@ const MENU_README = [
   'POTKO Menu Import',
   'One sheet, one row per dish. Each row carries its category: repeat the same Category ID, Category Name and Category Description on every dish of that category.',
   'Categories and kitchens that are not in POTKO yet are created. Ones that already exist (same Category ID, or same name) are used, never duplicated.',
-  'Item ID and Category ID are your own IDs: 2 to 12 letters, digits or hyphens (ITM-001, CAT-001). Importing the file again updates the dishes with the same Item ID. Left empty, POTKO makes one.',
+  'Item ID and Category ID are your own IDs: 1 to 12 letters, digits, hyphens or underscores (ITM-001, CAT-001, 101). Importing the file again updates the dishes with the same Item ID. Left empty, POTKO makes one.',
   'Item Name and Category Name are required. Item Type: Veg or Non-veg. Item Status: Active or Inactive (inactive dishes cannot be ordered).',
   'Base Price (INR): a number only. Open Price? Yes means the waiter types the price when ordering.',
   'Tax Mode: Restaurant (the restaurant tax), Custom (the Custom Tax Rate %, added or included as the restaurant tax setting says) or None.',
@@ -584,7 +660,7 @@ const MENU_README = [
   'Kitchen Terminals: one or more kitchen names separated by |, e.g. Main Kitchen|Tandoor. Empty means the main kitchen.',
   'Suggested Item IDs (for Go Well With): Item IDs separated by |, of dishes in this file or already on the menu. POTKO shows their current name and price.',
   'Display Order (1 = First): the place of the dish in its category.',
-  'Every row is checked and shown to you before anything is saved; rows with a problem are listed with the reason.',
+  'Every row is checked and shown to you before anything is saved; rows with a problem are listed with the reason. A new category is only created together with at least one of its dishes.',
   'The rows in Menu Import are demo data: replace them with your menu before importing. Pictures are added on each dish in the app.',
 ];
 const TEMPLATES = { menu: { headers: MENU_HEADERS, rows: MENU_ROWS, readme: MENU_README } };
@@ -624,4 +700,4 @@ function errorReport(records) {
   return Buffer.from(`﻿${lines.join('\r\n')}\r\n`, 'utf8');
 }
 
-module.exports = { readFile, parseCsv, buildRecords, classify, mapColumns, template, errorReport, safeCell, FIELDS, REQUIRED };
+module.exports = { readFile, parseCsv, buildRecords, classify, mapColumns, template, errorReport, safeCell, sameKey, FIELDS, REQUIRED, ID_RULE, ID_TEXT };

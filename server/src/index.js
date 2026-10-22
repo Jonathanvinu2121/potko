@@ -1,13 +1,17 @@
 // POTKO server: REST (login and data) and WebSocket (live events) in one service.
 require('dotenv').config({ quiet: true });
 
+const fs = require('fs');
 const http = require('http');
 const os = require('os');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 const { migratePool } = require('./migrate');
 const { requireAuth } = require('./auth');
+const { keepAwake, status: keepAwakeStatus } = require('./keep-awake');
+const { version } = require('../package.json');
 const ws = require('./ws/events');
 require('./ws/orders'); // registers the order actions
 require('./ws/tables'); // registers table locking and the stale-lock sweep
@@ -23,7 +27,17 @@ const uploadJson = express.json({ limit: '8mb' });
 app.use((req, res, next) => (/^\/(menu\/import\/preview|images)\/?$/.test(req.path) ? uploadJson : smallJson)(req, res, next));
 
 // Render pings this to check the service is up. It does not touch the database.
-app.get('/health', (req, res) => res.json({ ok: true }));
+// It also says which version is running and, online, the hours the server is kept awake.
+app.get('/health', (req, res) => res.json({ ok: true, version, keepAwake: keepAwakeStatus() }));
+
+// The public demo (src/demo.js) serves the web app from this same address. A page the browser asks
+// for (Accept: text/html, a path without a file extension) gets the app; the app's own calls ask
+// for JSON and reach the routes below.
+const web = process.env.POTKO_WEB_DIR;
+if (web && fs.existsSync(path.join(web, 'index.html'))) {
+  app.use(express.static(web, { index: false, maxAge: '1h' }));
+  app.get(/.*/, (req, res, next) => (/\btext\/html\b/.test(req.headers.accept || '') && !path.extname(req.path) ? res.sendFile(path.join(web, 'index.html')) : next()));
+}
 
 app.use('/auth', require('./routes/auth'));
 
@@ -80,6 +94,7 @@ async function start(port = process.env.PORT || 4000) {
   if (applied === null) console.log('The database is empty. Run "npm run db:setup" (demo data) or "npm run db:schema" first.');
   await new Promise((resolve) => server.listen(port, resolve));
   console.log(`POTKO server listening on port ${server.address().port}`);
+  keepAwake(); // online only: see keep-awake.js
   // On a laptop: the address phones on the same Wi-Fi type into the app (first screen, "Server").
   if (process.env.RENDER) return;
   for (const list of Object.values(os.networkInterfaces())) {

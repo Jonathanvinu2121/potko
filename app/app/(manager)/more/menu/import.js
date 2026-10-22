@@ -30,7 +30,7 @@ const WORDS = {
     'Add-ons and Prices as Extra Gravy:30|Extra Paneer:50',
     'Open Price, Tax Mode (Restaurant, Custom or None), Item Status, Display Order',
     'Kitchen Terminals as Main Kitchen|Tandoor, and Suggested Item IDs for Go Well With',
-    'New categories and kitchens are created; existing ones are used, never duplicated',
+    'Existing categories and kitchens are reused, never duplicated; new ones are created with their dishes',
   ],
 };
 const STATUS = {
@@ -112,22 +112,35 @@ export default function MenuImport() {
   };
 
   // ---------- Summary ----------
+  // Every number is the server's count of what was saved, never worked out here.
   if (step === 'done' && result) {
     const s = result.summary;
-    const clean = s.failed === 0 && s.skipped === 0;
-    const stat = (label, value, tone) => (
+    const dishes = s.items ?? { created: s.created, updated: s.updated, skipped: s.skipped, failed: s.failed };
+    const notImported = s.rows_failed ?? s.failed;
+    const duplicates = s.duplicates ?? dishes.skipped;
+    const clean = notImported === 0;
+    const stat = (value, label, tone, names) => (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: t.c[`${tone}Tint`] ?? t.c.pressed }}>
-          <Txt size={17} weight={700} color={tone === 'success' ? 'successText' : tone === 'warning' ? 'warningText' : tone === 'error' ? 'error' : 'textSecondary'} tabular>
+          <Txt size={17} weight={700} color={tone === 'success' ? 'successText' : tone === 'warning' ? 'warningText' : tone === 'error' ? 'error' : tone === 'primary' ? 'primary' : 'textSecondary'} tabular>
             {value}
           </Txt>
         </View>
-        <Txt size={15}>{label}</Txt>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt size={15}>{label}</Txt>
+          {names?.length ? (
+            <Txt size={13} color="textSecondary">
+              {names.join(', ')}
+            </Txt>
+          ) : null}
+        </View>
       </View>
     );
+    const created = s.categories_created;
+    const reused = s.categories_reused;
     return (
       <Screen
-        header={<AppHeader title={clean ? 'Import Success' : 'Import Finished'} back onBack={() => router.back()} />}
+        header={<AppHeader title={words.title} back onBack={() => router.back()} />}
         footer={
           <View style={{ gap: 8 }}>
             <Button title="Done" onPress={() => router.back()} />
@@ -135,12 +148,18 @@ export default function MenuImport() {
           </View>
         }
       >
-        <Success title={clean ? 'Import successful' : 'Import finished'} text={`${s.filename} · ${s.mode === 'update' ? 'new rows added, matching rows updated' : 'new rows added, nothing overwritten'}`}>
+        <Success
+          tone={clean ? 'success' : 'warning'}
+          title={clean ? 'Import successful' : 'Import finished with problems'}
+          text={[s.filename, s.rows != null ? `${plural(s.rows, 'row')} read` : null, s.mode === 'update' ? 'matching dishes updated' : 'nothing on the menu overwritten'].filter(Boolean).join(' · ')}
+        >
           <Card style={{ gap: 12 }}>
-            {stat('Created', s.created, 'success')}
-            {s.mode === 'update' || s.updated > 0 ? stat('Updated', s.updated, 'primary') : null}
-            {stat(s.mode === 'update' ? 'Skipped (nothing to change)' : 'Skipped (already on the menu)', s.skipped, 'warning')}
-            {stat('Not imported (errors)', s.failed, 'error')}
+            {stat(dishes.created, `${dishes.created === 1 ? 'dish' : 'dishes'} imported`, 'success')}
+            {created ? stat(created.length, `new ${created.length === 1 ? 'category' : 'categories'} created`, 'success', created) : null}
+            {reused ? stat(reused.length, `existing ${reused.length === 1 ? 'category' : 'categories'} reused`, 'primary', reused) : null}
+            {s.mode === 'update' || dishes.updated > 0 ? stat(dishes.updated, `${dishes.updated === 1 ? 'dish' : 'dishes'} updated`, 'primary') : null}
+            {stat(duplicates, `${duplicates === 1 ? 'duplicate' : 'duplicates'} skipped`, 'warning')}
+            {stat(notImported, `${notImported === 1 ? 'row' : 'rows'} not imported`, 'error')}
           </Card>
           {s.kitchens?.length ? <Notice icon="chef-hat" title={`${plural(s.kitchens.length, 'kitchen')} added: ${s.kitchens.join(', ')}`} text="Give them their chefs under More › Kitchens." /> : null}
           {result.problems.length > 0 ? (
@@ -151,7 +170,7 @@ export default function MenuImport() {
               {result.problems.slice(0, 30).map((p, i) => (
                 <View key={i} style={{ gap: 2 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Txt size={14} weight={600} style={{ flex: 1 }} numberOfLines={1}>
+                    <Txt size={14} weight={600} style={{ flex: 1 }} numberOfLines={2}>
                       Row {p.rows.join(', ')} · {p.name || '(no name)'}
                     </Txt>
                     <Chip label={RESULT[p.result] ?? 'Warning'} tone={p.result === 'failed' ? 'error' : p.result === 'skipped' ? 'warning' : 'neutral'} size={11} />
@@ -211,6 +230,8 @@ export default function MenuImport() {
     const c = preview.counts;
     const rows = preview.records.filter((r) => filter === 'all' || r.status === filter);
     const willCreate = c.new;
+    const newCategories = c.new_categories ?? c.categories;
+    const errorRows = c.error_rows ?? c.error;
     const willUpdate = mode === 'update' ? c.update : 0;
     return (
       <Screen
@@ -230,8 +251,14 @@ export default function MenuImport() {
                 {preview.filename}
               </Txt>
               <Txt size={13} color="textSecondary">
-                {[c.categories ? plural(c.categories, 'category', 'categories') : null, c.items ? plural(c.items, 'dish', 'dishes') : null].filter(Boolean).join(' and ') || 'Nothing new'} found{preview.sheet && preview.sheet !== 'CSV' ? ` on sheet ${preview.sheet}` : ''}
+                {[newCategories ? plural(newCategories, 'new category', 'new categories') : null, c.items ? plural(c.items, 'dish', 'dishes') : null].filter(Boolean).join(' and ') || 'Nothing new'} found{preview.sheet && preview.sheet !== 'CSV' ? ` on sheet ${preview.sheet}` : ''}
+                {c.rows ? ` · ${plural(c.rows, 'row')} read` : ''}
               </Txt>
+              {preview.reused?.length ? (
+                <Txt size={13} color="textSecondary">
+                  {preview.reused.length === 1 ? 'Existing category reused' : 'Existing categories reused'}: {preview.reused.join(', ')}
+                </Txt>
+              ) : null}
             </View>
           </Card>
 
@@ -242,7 +269,7 @@ export default function MenuImport() {
             <Chip label={`Errors ${c.error}`} selected={filter === 'error'} onPress={() => setFilter('error')} />
           </ScrollView>
           {preview.new_kitchens?.length ? <Notice icon="chef-hat" title={`New ${preview.new_kitchens.length === 1 ? 'kitchen' : 'kitchens'}: ${preview.new_kitchens.join(', ')}`} text="They are added with the import. Give them their chefs under More › Kitchens." /> : null}
-          {c.error > 0 ? <Notice tone="error" icon="alert-circle-outline" text={`${plural(c.error, 'row')} cannot be imported and will be left out. Fix ${c.error === 1 ? 'it' : 'them'} in the file and import again, or continue with the rest.`} /> : null}
+          {errorRows > 0 ? <Notice tone="error" icon="alert-circle-outline" text={`${plural(errorRows, 'row')} cannot be imported and will be left out. Fix ${errorRows === 1 ? 'it' : 'them'} in the file and import again, or continue with the rest.`} /> : null}
           {(preview.orphans || []).map((line) => (
             <Notice key={line} tone="error" icon="alert-circle-outline" text={line} />
           ))}
@@ -303,7 +330,7 @@ export default function MenuImport() {
               What to do with rows already on the menu
             </Txt>
             <RadioCard title="Create new only" text={`Adds the ${plural(c.new, 'new row')}. The ${plural(c.update, 'row')} already on the menu ${c.update === 1 ? 'is' : 'are'} left exactly as ${c.update === 1 ? 'it is' : 'they are'}.`} selected={mode === 'create'} onPress={() => setMode('create')} />
-            <RadioCard title="Update matching records" text={`Adds the ${plural(c.new, 'new row')} and changes the ${plural(c.update, 'matching row')} to what the file says (shown above as old → new). Matching is by item code, or by name within the category.`} selected={mode === 'update'} onPress={() => setMode('update')} disabled={c.update === 0} />
+            <RadioCard title="Update matching records" text={`Adds the ${plural(c.new, 'new row')} and changes the ${plural(c.update, 'matching row')} to what the file says (shown above as old → new). Matching is by Item ID, or by name within the category.`} selected={mode === 'update'} onPress={() => setMode('update')} disabled={c.update === 0} />
           </View>
         </View>
       </Screen>

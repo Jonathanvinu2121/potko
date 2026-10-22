@@ -405,7 +405,7 @@ test('import: preview, create new only, the same import twice, then update match
   });
   assert.equal(first.status, 200);
   // "Nowhere" is not on the menu: it comes along as a new category with its dish.
-  assert.deepEqual(first.data.counts, { new: 3, update: 1, error: 1, warnings: 0, categories: 1, items: 4, kitchens: 0 });
+  assert.deepEqual(first.data.counts, { new: 3, update: 1, error: 1, warnings: 0, rows: 5, error_rows: 1, new_categories: 1, reused: 1, categories: 1, items: 4, kitchens: 0 });
 
   const created = await manager.post(`/menu/import/${first.data.id}/commit`, { mode: 'create' });
   assert.deepEqual([created.data.summary.created, created.data.summary.updated, created.data.summary.skipped, created.data.summary.failed], [3, 0, 1, 1]);
@@ -608,8 +608,10 @@ test('a table is split by seats for a second party, re-cut, and is whole again w
   const first = await servedOrder(maya, 'T3', [{ menuItemId: item('STR01').id, qty: 1 }]);
   const t3 = table('T3').id; // six seats
   assert.equal((await maya.try('table.split', { tableId: t3, parts: [{ seats: 4 }, { seats: 1 }] })).error, 'seats_mismatch');
-  const split = await maya.send('table.split', { tableId: t3, parts: [{ seats: 4 }, { seats: 2 }] });
-  assert.deepEqual(split.parts.map((p) => [p.table_label, p.seats, p.free]), [['T3.1', 4, false], ['T3.2', 2, true]]);
+  // The two guests stay together on T3.1 with their two seats; the four free seats make T3.2.
+  assert.equal((await maya.try('table.split', { tableId: t3, parts: [{ seats: 4 }, { seats: 2 }] })).error, 'party_seats');
+  const split = await maya.send('table.split', { tableId: t3, parts: [{ seats: 2 }, { seats: 4 }] });
+  assert.deepEqual(split.parts.map((p) => [p.table_label, p.seats, p.free]), [['T3.1', 2, false], ['T3.2', 4, true]]);
   await refreshTables();
   assert.equal(table('T3').status, 'split');
   assert.equal(table('T3.2').status, 'free');
@@ -757,10 +759,11 @@ test('a manager sees only the roles below; an admin can switch a manager off; a 
   assert.equal((await admin.del(`/users/${boss.data.user.id}`)).status, 200);
 });
 
-test('developer sign-in is off unless switched on, and never works through a shared link or a hosted server', async () => {
+test('developer sign-in is off unless switched on, and never works through a shared link or a hosted server (but for the in-memory demo)', async () => {
   // (A developer's own .env may switch it on for this computer; the test starts from "off".)
   const flag = process.env.DEV_LOGIN;
   const before = process.env.NODE_ENV;
+  const url = process.env.DATABASE_URL;
   delete process.env.DEV_LOGIN;
   try {
     assert.equal((await call(env.base, '/auth/dev')).data.enabled, false);
@@ -779,11 +782,25 @@ test('developer sign-in is off unless switched on, and never works through a sha
     process.env.NODE_ENV = 'production';
     assert.equal((await call(env.base, '/auth/dev')).data.enabled, false);
     assert.equal((await call(env.base, '/auth/dev-login', { method: 'POST', body: { userId: maya.user.id } })).status, 404);
+    // The public demo (src/demo.js) runs on its own in-memory database on the same machine: there it
+    // works on the hosted server and through the host's proxy, but never with a restaurant's database.
+    process.env.DEV_LOGIN = 'public';
+    process.env.RENDER = 'true';
+    process.env.POTKO_DEMO = 'in-memory';
+    assert.equal((await (await fetch(env.base + '/auth/dev', { headers: { 'x-forwarded-for': '203.0.113.9' } })).json()).enabled, true);
+    process.env.DATABASE_URL = `postgresql://owner:secret@ep-example.ap-southeast-1.aws.neon.tech/neondb?sslmode=require`;
+    assert.equal((await call(env.base, '/auth/dev')).data.enabled, false);
+    process.env.DATABASE_URL = url;
+    delete process.env.POTKO_DEMO;
+    assert.equal((await call(env.base, '/auth/dev')).data.enabled, false);
   } finally {
     if (flag === undefined) delete process.env.DEV_LOGIN;
     else process.env.DEV_LOGIN = flag;
     if (before === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = before;
+    process.env.DATABASE_URL = url;
+    delete process.env.RENDER;
+    delete process.env.POTKO_DEMO;
   }
 });
 

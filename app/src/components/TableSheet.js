@@ -41,6 +41,8 @@ export function TableSheet({ table, onClose, paths }) {
   const paid = table.order_status === 'paid';
   const isPart = !!table.parent_table_id;
   const siblings = isPart ? tables.filter((x) => x.parent_table_id === table.parent_table_id) : [];
+  // The party stays together when a table is split, so a table its guests fill cannot be split.
+  const full = !isPart && !!table.order_id && table.order_guests >= table.seats;
   const joined = table.joined || [];
   const seats = table.seats + joined.reduce((n, j) => n + j.seats, 0);
   const name = groupLabel(table);
@@ -92,8 +94,16 @@ export function TableSheet({ table, onClose, paths }) {
             icon="call-split"
             tone="primary"
             title="Split Table"
-            subtitle={isPart ? `${table.parent_label} is in ${plural(siblings.length, 'part')}: change the split` : table.seats < 2 ? 'This table has one seat' : 'Split this table into multiple tables'}
-            disabled={!isPart && table.seats < 2}
+            subtitle={
+              isPart
+                ? `${table.parent_label} is in ${plural(siblings.length, 'part')}: change the split`
+                : table.seats < 2
+                  ? 'This table has one seat'
+                  : full
+                    ? `No free seats: the ${plural(table.order_guests, 'guest')} fill all ${plural(table.seats, 'seat')}`
+                    : 'Split this table into multiple tables'
+            }
+            disabled={!isPart && (table.seats < 2 || full)}
             onPress={() => go(paths.split(table.id))}
           />
         ) : null}

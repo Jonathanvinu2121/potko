@@ -67,11 +67,14 @@ These are checked on the server for every action, so a modified or out-of-date a
   is waiting for approval. A failed attempt changes nothing, parts by different methods add up, and the same
   payment sent twice is recorded once. A paid bill cannot be changed; money goes back only as a refund.
 - **Tables.**
-  - *Split* divides a table by seats into as many parts as wanted (T4 with 6 seats becomes T4.1 with 4 and
-    T4.2 with 2; the seats always add up). The party already there stays on the first part, the others are
-    free for new guests. Dishes can be moved to another part to give it a bill of its own; the bills then add
-    up exactly to the original. A split can be re-cut, a part guests leave is free again, and when every part
-    is free the table is whole again.
+  - *Split* divides a table by seats into parts (T4 with 6 seats becomes T4.1 with 4 and T4.2 with 2; the
+    seats always add up). The party already seated stays together on the first part with exactly its seats,
+    and only the free seats make further parts: 4 seats with 2 guests can be 2 + 2 or 2 + 1 + 1, never four
+    parts; 6 seats with 2 guests, 2 to 5 parts; a table its guests fill cannot be split. Nobody seated: 2
+    parts up to the seats. The order, its tickets, discount and payments stay with the party, unchanged.
+    Dishes can be moved to another part to give it a bill of its own (splitting the bill, not the seating);
+    the bills then add up exactly to the original. A split can be re-cut (a part with guests keeps at least
+    their seats), a part guests leave is free again, and when every part is free the table is whole again.
   - *Merge* brings parts back together. *Join* pushes whole tables of one dining area together for one party
     (T3 + T4), with one order and one bill, until that bill is closed or the tables are separated. A paid bill
     is never folded into another.
@@ -127,7 +130,7 @@ npm run db:setup
 npm run dev
 ```
 
-The server listens on port 4000. `http://localhost:4000/health` should answer `{"ok":true}`.
+The server listens on port 4000. `http://localhost:4000/health` should answer `{"ok":true,...}` with the version.
 
 **Demo logins** (an admin, a manager, a cashier, two chefs and two waiters, with three floors, four dining
 areas and four kitchen terminals) are listed at the top of [`server/sql/seed.sql`](server/sql/seed.sql).
@@ -138,9 +141,11 @@ hosted (`NODE_ENV=production`, or on Render) and for any request that arrives th
 it only works on the computer (or the local network) the test server runs on.
 
 **Tests:** `npm test` in `server/` runs the business rules against the real server on a throwaway database:
-permissions and the staff hierarchy, table access, KOT routing, a kitchen's dishes, the one-step kitchen flow, add-ons,
-discounts and approvals, the PIN lock, payments, split, merge, join and transfer, floors, paid bills staying
-fixed, menu import, staff sessions, reports, developer sign-in and the audit log.
+permissions and the staff hierarchy, table access, KOT routing, a kitchen's dishes, the kitchen flow (accept,
+start, ready), add-ons, discounts and approvals, the PIN lock, payments, split (a seated party stays together:
+`test/split.test.js`), merge, join and transfer, floors, paid bills staying fixed, menu import into existing
+and new categories (`test/menu-import.test.js`), first-run set-up, staff sessions, reports, developer sign-in
+and the audit log.
 
 **Upgrading:** changes to the database are in `server/sql/migrations/`. The server applies the ones it has not
 run yet every time it starts (each exactly once, existing data is kept); `npm run db:migrate` does the same
@@ -203,14 +208,49 @@ restaurant only ever sees its own data.
 4. **Installable Android app.** `npm run apk -- https://YOUR-SERVICE.onrender.com` (see
    [Building the Android app](#building-the-android-app-apk)). The web build is `npx expo export --platform web`.
 
+### Public demo
+
+A link anyone can open to try POTKO, apart from the client's server: the `potko-demo` service in
+[`render.yaml`](render.yaml), deployed from the `demo` branch. It runs `node --expose-gc src/demo.js`:
+
+- the server with a database of its own **in memory**, filled with the demo restaurant (`sql/seed.sql`). It never
+  reads `DATABASE_URL`, so it cannot reach a restaurant's data; everything starts afresh whenever the service
+  restarts (on the free plan, after 15 minutes without visitors; the first visit after that takes about a minute);
+- the web app from the same address (`server/demo-web`, built with
+  `EXPO_PUBLIC_API_URL=same-origin npx expo export --platform web --output-dir ../server/demo-web` in `app/`);
+- one-tap sign-in (developer mode), which a hosted server allows only for this in-memory demo.
+
+The build (`npm install && npm run demo:snapshot`) saves the demo database as `demo-db.tgz`, so each start
+loads it in about half a second instead of building it again (about 3 s here, far more on the free plan's tenth
+of a CPU); without the file it is built at start. To update the demo: rebuild `server/demo-web` on the `demo`
+branch and push; Render deploys it. It needs about 350 MB of memory (the in-memory database takes about 300 MB),
+inside the free plan's 512 MB.
+
 Free-plan limits to know about:
 
-- Render's free service sleeps after 15 minutes without a request. The app pings every 25 seconds while it is
-  open, so it stays awake during service hours, but the first sign-in of the day can take about a minute.
-- Neon's free database sleeps after 5 minutes idle (the first query after that is a little slow) and allows
-  0.5 GB and 100 compute-hours a month.
+- Render's free service (0.1 CPU, 512 MB) sleeps after 15 minutes without a request or WebSocket message, and
+  the next phone then waits about a minute. The app pings every 25 seconds while it is open, which keeps it
+  awake. Render may also restart a free service at any time (the phones reconnect by themselves).
+- **Opening hours.** The client's server also keeps itself awake between orders during opening hours: every
+  5 minutes it asks its own address for `/health` ([`server/src/keep-awake.js`](server/src/keep-awake.js)).
+  The hours are `KEEP_AWAKE_HOURS` in the service's Environment on Render (default `09:00-23:30`, India time;
+  `18:00-02:00` runs past midnight; `off` stops it). A sleeping server cannot wake itself, so a GitHub job
+  ([`.github/workflows/wake-server.yml`](.github/workflows/wake-server.yml)) wakes it at 08:52 and 09:07: move
+  those times when the hours change. Outside the hours it sleeps 15 minutes after the last phone goes quiet,
+  about 460 of the 750 free hours a month. `/health` shows the hours and the last keep-awake request. The demo
+  is never kept awake. GitHub switches scheduled jobs off in a public repository after 60 days without a
+  commit (it sends an email; switch it back on under Actions).
+- All free services of a Render workspace share **750 running hours a month**; one service awake around the
+  clock uses about 744. If they run out, Render suspends every free service until the 1st. So never keep two
+  free services (for example the client's server and the demo) awake around the clock.
+- Neon's free database sleeps after 5 minutes without a query (the app's pings do not touch it), and allows
+  1 GB of storage, 100 compute-hours a month (about 400 hours awake at the smallest size) and 5 GB of data out.
+  A complete order takes about 5.5 KB, so 1 GB holds roughly 190,000 orders.
+- Measured on the free plan (the public demo, database on the same machine): an order is confirmed in about
+  0.3 s; 15 waiters sending at the same second wait about 4 s each; about 50 complete orders a minute.
 - Do not use Render's free PostgreSQL: it expires after 30 days.
-- Before a restaurant depends on it, upgrade the Render service so it never sleeps.
+- Before a restaurant depends on it, move the server to a paid Render plan ($7 a month at 0.5 CPU, never
+  sleeps, outside the free hours).
 
 ## Importing the menu
 
@@ -221,9 +261,9 @@ per dish:
 
 | Column | What to enter |
 |---|---|
-| Item ID | 2 to 12 letters, digits or hyphens, e.g. `ITM-001`. Matches the dish when the file is imported again. Empty: one is made |
-| Item Name, Category Name | Required |
-| Category ID | Optional, e.g. `CAT-001`. A new ID or name creates the category; an existing one is used, never duplicated |
+| Item ID | 1 to 12 letters, digits, hyphens or underscores, e.g. `ITM-001` or `101`. Matches the dish when the file is imported again. Empty: one is made |
+| Item Name, Category Name | Required. A plain "Name" heading beside a Category column is the dish's name |
+| Category ID | Optional, e.g. `CAT-001`. A new ID or name creates the category; an existing one is reused, never duplicated (names match whatever the capitals and spaces) |
 | Item Description, Category Description | Optional |
 | Item Type (Veg/Non-veg) | Veg or Non-veg |
 | Base Price (INR) | A number; not needed with portions or an open price |
@@ -234,10 +274,20 @@ per dish:
 | Portions and Prices, Add-ons and Prices | `Regular:220\|Large:320` (no spaces needed). One portion is a plain price |
 | Suggested Item IDs (for Go Well With) | `ITM-004\|ITM-005`: on the menu already or further down the file |
 
-Every row is checked and shown first (categories, dishes and new kitchens, with any problem); then "add new
-only" or "also update matching" (by Item ID, else by category and name; categories by Category ID, else
-name). Importing the same file again changes nothing. Rows with problems are left out and listed in a
-downloadable error report. Older files (one row per portion, `Name|Price` lists, "Item Code") are still read.
+Every row is checked and shown first (new categories, the existing ones that are reused, dishes and new
+kitchens, with any problem); then "add new only" or "also update matching" (by Item ID, else by category and
+name; categories by Category ID, else name). The import is one transaction, one at a time per restaurant:
+
+- A new category is created together with its dishes, and only if at least one of them can be saved (or the
+  file lists it with no dishes), so no category is left empty because its dishes failed.
+- A dish with no price (no Base Price, no portions, Open Price not Yes) is left out with the reason.
+- A row that repeats a dish is counted once and said so; the same file imported again changes nothing.
+- A deleted dish no longer holds its Item ID, so a file can be imported again after its dishes were deleted.
+- The result counts what was saved: rows read, dishes imported, new categories created and existing ones
+  reused (by name), dishes updated, duplicates skipped, rows not imported with their reasons. Problems are in
+  a downloadable error report.
+
+Older files (one row per portion, `Name|Price` lists, "Item Code") are still read.
 
 ## How it fits together
 
@@ -327,7 +377,6 @@ server/
   screens leave the money out and their bills go to the counter; the app on their device still receives the
   amounts from the server.
 - **A dish marked ready by mistake** cannot be un-marked from the kitchen board.
-- **Guest counts are not recorded.** Tables are counted by seats; reports have no "guests" figure.
 - **Alerts are in-app only** (toast, sound, vibration). There are no push notifications when the app is closed.
 - **Tax** is one configurable GST rate (with a rate per dish where needed), shown as CGST + SGST. Check the
   rate, the GSTIN and what is printed on bills with an accountant before real use.

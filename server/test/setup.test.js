@@ -86,7 +86,7 @@ test('the new restaurant imports the combined menu file: categories, dishes, kit
   const file = await call(base, '/menu/import/template?kind=categories&format=xlsx', { token }); // started from Add Category
   const preview = await call(base, '/menu/import/preview', { token, method: 'POST', body: { kind: 'categories', filename: 'POTKO_Menu_Import_Template.xlsx', data: Buffer.from(file.data).toString('base64') } });
   assert.equal(preview.status, 200);
-  assert.deepEqual(preview.data.counts, { new: 15, update: 0, error: 0, warnings: 0, categories: 6, items: 9, kitchens: 3 });
+  assert.deepEqual(preview.data.counts, { new: 15, update: 0, error: 0, warnings: 0, rows: 9, error_rows: 0, new_categories: 6, reused: 0, categories: 6, items: 9, kitchens: 3 });
 
   const done = await call(base, `/menu/import/${preview.data.id}/commit`, { token, method: 'POST', body: { mode: 'create' } });
   assert.equal(done.data.summary.created, 15);
