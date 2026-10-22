@@ -228,12 +228,20 @@ inside the free plan's 512 MB.
 
 Free-plan limits to know about:
 
-- Render's free service sleeps after 15 minutes without a request. The app pings every 25 seconds while it is
-  open, so it stays awake during service hours, but the first sign-in of the day can take about a minute.
-- Neon's free database sleeps after 5 minutes idle (the first query after that is a little slow) and allows
-  0.5 GB and 100 compute-hours a month.
+- Render's free service (0.1 CPU, 512 MB) sleeps after 15 minutes without a request. The app pings every 25
+  seconds while it is open, so it stays awake during service hours, but the first sign-in of the day can take
+  about a minute. Render may also restart a free service at any time (the phones reconnect by themselves).
+- All free services of a Render workspace share **750 running hours a month**; one service awake around the
+  clock uses about 744. If they run out, Render suspends every free service until the 1st. So never keep two
+  free services (for example the client's server and the demo) awake around the clock.
+- Neon's free database sleeps after 5 minutes without a query (the app's pings do not touch it), and allows
+  1 GB of storage, 100 compute-hours a month (about 400 hours awake at the smallest size) and 5 GB of data out.
+  A complete order takes about 5.5 KB, so 1 GB holds roughly 190,000 orders.
+- Measured on the free plan (the public demo, database on the same machine): an order is confirmed in about
+  0.3 s; 15 waiters sending at the same second wait about 4 s each; about 50 complete orders a minute.
 - Do not use Render's free PostgreSQL: it expires after 30 days.
-- Before a restaurant depends on it, upgrade the Render service so it never sleeps.
+- Before a restaurant depends on it, move the server to a paid Render plan ($7 a month at 0.5 CPU, never
+  sleeps, outside the free hours).
 
 ## Importing the menu
 
@@ -360,7 +368,6 @@ server/
   screens leave the money out and their bills go to the counter; the app on their device still receives the
   amounts from the server.
 - **A dish marked ready by mistake** cannot be un-marked from the kitchen board.
-- **Guest counts are not recorded.** Tables are counted by seats; reports have no "guests" figure.
 - **Alerts are in-app only** (toast, sound, vibration). There are no push notifications when the app is closed.
 - **Tax** is one configurable GST rate (with a rate per dish where needed), shown as CGST + SGST. Check the
   rate, the GSTIN and what is printed on bills with an accountant before real use.
