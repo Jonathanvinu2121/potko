@@ -1,9 +1,10 @@
 # Changelog
 
-## 2.0.2 — 2026-10-21
+## 2.0.2 — 2026-10-22
 
 The two fixes of the developer brief: the menu import puts every dish in its category, and a table split
 keeps the seated party together. Backtested on 2.0.0, 2.0.1 and this version with the same scenarios.
+The online server now stays awake during opening hours, and there is a public demo link.
 
 ### Menu import (categories created, dishes missing)
 - Root causes found and fixed:
@@ -49,9 +50,19 @@ keeps the seated party together. Backtested on 2.0.0, 2.0.1 and this version wit
   same address, with one-tap sign-in. See README, Public demo.
 - Developer sign-in stays off on every hosted server except that in-memory demo (tested).
 
+### Online server awake during opening hours
+- Render's free plan puts the server to sleep after 15 minutes without use, and the next phone waits about a
+  minute. During opening hours (`KEEP_AWAKE_HOURS` on Render, default `09:00-23:30` India time) the server
+  now asks its own address for `/health` every 5 minutes, so it does not fall asleep between orders. Outside
+  them it sleeps as before, which keeps the workspace inside Render's 750 free hours a month (about 460 used).
+- A GitHub job (`.github/workflows/wake-server.yml`) wakes it at 08:52 and 09:07, before the first phone.
+- Never on a laptop or the public demo; `KEEP_AWAKE_HOURS=off` stops it. `/health` now shows the version, the
+  hours and the time of the last keep-awake request.
+
 ### Tests
-- `server/test/menu-import.test.js` (10) and `server/test/split.test.js` (9): the brief's cases. All 80
-  server tests pass.
+- `server/test/menu-import.test.js` (10) and `server/test/split.test.js` (9): the brief's cases;
+  `server/test/keep-awake.test.js` (5): the hours, past midnight, and where it stays off. All 85 server
+  tests pass.
 
 ## 2.0.1 — 2026-10-16
 

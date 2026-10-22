@@ -130,7 +130,7 @@ npm run db:setup
 npm run dev
 ```
 
-The server listens on port 4000. `http://localhost:4000/health` should answer `{"ok":true}`.
+The server listens on port 4000. `http://localhost:4000/health` should answer `{"ok":true,...}` with the version.
 
 **Demo logins** (an admin, a manager, a cashier, two chefs and two waiters, with three floors, four dining
 areas and four kitchen terminals) are listed at the top of [`server/sql/seed.sql`](server/sql/seed.sql).
@@ -228,9 +228,18 @@ inside the free plan's 512 MB.
 
 Free-plan limits to know about:
 
-- Render's free service (0.1 CPU, 512 MB) sleeps after 15 minutes without a request. The app pings every 25
-  seconds while it is open, so it stays awake during service hours, but the first sign-in of the day can take
-  about a minute. Render may also restart a free service at any time (the phones reconnect by themselves).
+- Render's free service (0.1 CPU, 512 MB) sleeps after 15 minutes without a request or WebSocket message, and
+  the next phone then waits about a minute. The app pings every 25 seconds while it is open, which keeps it
+  awake. Render may also restart a free service at any time (the phones reconnect by themselves).
+- **Opening hours.** The client's server also keeps itself awake between orders during opening hours: every
+  5 minutes it asks its own address for `/health` ([`server/src/keep-awake.js`](server/src/keep-awake.js)).
+  The hours are `KEEP_AWAKE_HOURS` in the service's Environment on Render (default `09:00-23:30`, India time;
+  `18:00-02:00` runs past midnight; `off` stops it). A sleeping server cannot wake itself, so a GitHub job
+  ([`.github/workflows/wake-server.yml`](.github/workflows/wake-server.yml)) wakes it at 08:52 and 09:07: move
+  those times when the hours change. Outside the hours it sleeps 15 minutes after the last phone goes quiet,
+  about 460 of the 750 free hours a month. `/health` shows the hours and the last keep-awake request. The demo
+  is never kept awake. GitHub switches scheduled jobs off in a public repository after 60 days without a
+  commit (it sends an email; switch it back on under Actions).
 - All free services of a Render workspace share **750 running hours a month**; one service awake around the
   clock uses about 744. If they run out, Render suspends every free service until the 1st. So never keep two
   free services (for example the client's server and the demo) awake around the clock.
