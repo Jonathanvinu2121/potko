@@ -34,7 +34,7 @@ services:
     region: singapore
     branch: demo
     rootDir: server
-    buildCommand: npm install # includes the in-memory database (a dev dependency)
+    buildCommand: npm install && npm run demo:snapshot # the in-memory database (a dev dependency) and its demo data
     startCommand: node --expose-gc src/demo.js
     healthCheckPath: /health
     envVars:
