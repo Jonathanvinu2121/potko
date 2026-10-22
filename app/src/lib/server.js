@@ -6,7 +6,10 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const KEY = 'potko.server';
-export const BUILT_IN = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const ADDRESS = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/+$/, '');
+// "same-origin": a web build served by the POTKO server itself (the public demo) uses the address
+// it was opened from.
+export const BUILT_IN = ADDRESS === 'same-origin' && typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ADDRESS;
 
 export const useServer = create(() => ({ url: BUILT_IN }));
 

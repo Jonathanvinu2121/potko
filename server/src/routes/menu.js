@@ -6,6 +6,7 @@ const { audit } = require('../orders');
 const ws = require('../ws/events');
 const { swapSort, setOrder } = require('./floor');
 const { menuFor, itemFor } = require('../scope');
+const { ID_RULE, ID_TEXT } = require('../importer');
 
 // The terminal that cooks dishes with none of their own.
 async function defaultTerminal(restaurantId) {
@@ -247,7 +248,7 @@ async function placeItem(client, categoryId, itemId, position) {
 
 // POST /menu/items { category_id, code?, name, description?, veg, price, sizes, customisations, modifier_groups?,
 //                    tax_rate?, tax_mode?, terminal_id?, image_id?, available?, addonIds? }
-//   code  the dish's Item ID (2 to 12 letters, digits or hyphens); left out, one is made
+//   code  the dish's Item ID (1 to 12 letters, digits, hyphens or underscores); left out, one is made
 router.post('/items', manage, async (req, res) => {
   const { restaurantId } = req.user;
   const fields = readItem(req.body || {}, false);
@@ -379,12 +380,11 @@ router.delete('/items/:id', manage, async (req, res) => {
 
 // ---- Categories ----
 
-// An Item ID or Category ID: 2 to 12 letters, digits or hyphens (ITM-001, CAT-001), kept in capitals.
-const ID_RULE = /^[A-Z0-9-]{2,12}$/;
+// An Item ID or Category ID (ITM-001, CAT-001, 101), kept in capitals: the same rule as the menu file.
 function readId(value, what) {
   const id = text(value, 13).toUpperCase();
   if (!id) return null;
-  if (!ID_RULE.test(id)) throw bad(`${what} is 2 to 12 letters, digits or hyphens`);
+  if (!ID_RULE.test(id)) throw bad(`${what} is ${ID_TEXT}`);
   return id;
 }
 const idTaken = (what) => (err) => { throw err.code === '23505' ? new AppError(409, 'code_taken', `Another ${what} already uses that ID`) : err; };

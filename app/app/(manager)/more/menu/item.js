@@ -28,7 +28,8 @@ const STEPS = [
   { value: 'pairs', label: 'Goes Well With' },
   { value: 'terminals', label: 'Terminals' },
 ];
-const CODE = /^[A-Z0-9-]{2,12}$/;
+// The same rule as the server and the menu file.
+const CODE = /^[A-Z0-9_-]{1,12}$/;
 const ADDONS = 'Add-ons';
 
 // The add-ons are one simple list (the design). Older dishes may have had several groups: the
@@ -146,7 +147,7 @@ export default function ItemForm() {
   const problem = !form.name.trim()
     ? ['details', 'Enter the item name.']
     : code && codeEditable && !CODE.test(code)
-      ? ['details', 'An Item ID is 2 to 12 letters, digits or hyphens.']
+      ? ['details', 'An Item ID is 1 to 12 letters, digits, hyphens or underscores.']
     : !form.category_id
       ? ['details', 'Choose a category.']
       : !priceOk
@@ -235,9 +236,9 @@ export default function ItemForm() {
             <PictureField imageId={form.image_id} onChange={(image_id) => set({ image_id })} icon="food-outline" label="Add Image (Optional)" hint="Tap to upload or select image. JPG or PNG." />
             <TextField label="Item Name" required value={form.name} onChangeText={(name) => set({ name })} placeholder="e.g. Classic Burger" autoCapitalize="words" maxLength={80} />
             <View style={{ gap: 4 }}>
-              <TextField label="Item ID" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })} placeholder="e.g. ITM-001 (made for you if empty)" autoCapitalize="characters" maxLength={12} editable={codeEditable} />
+              <TextField label="Item ID" value={form.code} onChangeText={(value) => set({ code: value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })} placeholder="e.g. ITM-001 (made for you if empty)" autoCapitalize="characters" maxLength={12} editable={codeEditable} />
               <Txt size={12} color="textSecondary">
-                {codeEditable ? 'Used in the menu file and in Goes Well With. 2 to 12 letters, digits or hyphens.' : 'Only an admin can change an Item ID.'}
+                {codeEditable ? 'Used in the menu file and in Goes Well With. 1 to 12 letters, digits, hyphens or underscores.' : 'Only an admin can change an Item ID.'}
               </Txt>
             </View>
             <TextField label="Description (Optional)" value={form.description} onChangeText={(description) => set({ description })} placeholder="e.g. Juicy grilled patty with fresh veggies" autoCapitalize="sentences" maxLength={200} />

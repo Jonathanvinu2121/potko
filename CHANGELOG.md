@@ -1,5 +1,58 @@
 # Changelog
 
+## 2.0.2 — 2026-10-21
+
+The two fixes of the developer brief: the menu import puts every dish in its category, and a table split
+keeps the seated party together. Backtested on 2.0.0, 2.0.1 and this version with the same scenarios.
+
+### Menu import (categories created, dishes missing)
+- Root causes found and fixed:
+  - **Deleted dishes kept their Item IDs** (the unique index covered deleted rows, while the import only
+    looks at the menu as it is): importing a file again after deleting its dishes created the categories and
+    failed every dish ("That code or name is already used"). Item IDs now belong to dishes on the menu only
+    (migration 006); nothing else changes.
+  - **A plain "Name" heading** in a file started from Add Category was read as the category, and the real
+    Category column was dropped: categories named after dishes, no dishes. "Name" beside a Category column
+    is now the dish.
+  - **A new category was created even when all its dishes failed** (no price, a bad Item ID). It is now
+    created together with its dishes, as one unit, only when at least one of them is saved; otherwise it is
+    left out with the reason (preview and import agree).
+  - **Item IDs like 1, 2, 3 or ITM_001 were refused.** Item and Category IDs are now 1 to 12 letters,
+    digits, hyphens or underscores, in the file, the dish form and the category form.
+  - (2.0.0 only, fixed in 2.0.1: Add Category › Import read the category columns only.)
+- The import runs one at a time per restaurant, so two imports cannot both create the same category; names
+  match whatever the capitals and extra spaces; a category written with and without its Category ID is one.
+- Repeated rows of a dish are counted once and reported; a header-only file is refused with a reason.
+- **The result says what was saved**: rows read, dishes imported, new categories created and existing ones
+  reused (by name), dishes updated, duplicates skipped, rows not imported with their reasons ("Import
+  finished with problems" when any row was left out). The preview names the existing categories reused.
+
+### Table split (seated guests)
+- **The party already seated stays together** on the first part with exactly its seats; only the free seats
+  make further parts. 4 seats with 2 guests: 2 + 2 or 2 + 1 + 1, never four parts; 6 seats with 2 guests:
+  2 to 5 parts; 3 of 4 seated: 3 + 1 only; a full table cannot be split (the hold menu says so).
+- Root cause: the split screen limited the parts to the number of guests and divided the guests between the
+  parts (4 seats, 2 guests: only "2 parts", one person each), while the server checked capacity only (it
+  accepted four parts). Both now use the same rule, and the server refuses anything else, including the
+  older app's divided party.
+- Each choice shows its seats (2+1+1) and the chosen one is drawn seat by seat before you confirm; the
+  party's table is fixed and the free seats can be moved between the new tables. An order with no guest
+  count asks for it first.
+- The order, its dishes, tickets, prices, discount and payments stay exactly as they were. Splitting the
+  bill (moving dishes to another part) keeps its own rules. A re-cut keeps each party's seats.
+- The success screen names each new table again (T1.1, T1.2…), which 2.0.0 and 2.0.1 left blank.
+
+### Public demo link
+- A demo anyone can open, apart from the client's server: the `potko-demo` service on Render (`render.yaml`),
+  from the `demo` branch. The server runs with its own in-memory database filled with the demo restaurant
+  (it never reads `DATABASE_URL`; the data starts afresh on every restart) and serves the web app from the
+  same address, with one-tap sign-in. See README, Public demo.
+- Developer sign-in stays off on every hosted server except that in-memory demo (tested).
+
+### Tests
+- `server/test/menu-import.test.js` (10) and `server/test/split.test.js` (9): the brief's cases. All 80
+  server tests pass.
+
 ## 2.0.1 — 2026-10-16
 
 The client's combined menu file is read exactly as written, staff sign in with a Staff ID everywhere, and a

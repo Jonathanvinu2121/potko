@@ -14,6 +14,12 @@ const { publishOrder, publishTables } = require('./publish');
 
 const fail = (code, message, status = 400) => new AppError(status, code, message);
 const MAX_PARTS = 12;
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// A guest count given with a part (1 to 99), or null.
+const guestsOf = (part) => {
+  const n = Number(part?.guests);
+  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
+};
 
 // Thrown at the end of a "preview" run so the transaction rolls back and nothing is saved.
 class Preview extends Error {
@@ -90,12 +96,16 @@ const summary = (order) => ({
 //
 // Divides a table by seats into as many parts as wanted: T4 with 6 seats becomes T4.1 (4 seats)
 // and T4.2 (2 seats). The seats of the parts always add up to the table's seats.
-//   First split   the party already at the table (if any) stays on the first part. Every other
-//                 part is free for a new party, unless dishes are moved to it: then it gets a
-//                 bill of its own (the same guests, paying separately).
+//   First split   the party already at the table (if any) stays together on the first part,
+//                 which keeps exactly their seats; only the free seats make further parts. So
+//                 4 seats with 2 guests becomes 2 + 2 or 2 + 1 + 1, never four parts. (guests on
+//                 the first part is only read when the order has no guest count yet.)
+//                 Moving dishes to another part is splitting the bill, not the seating: that part
+//                 gets a bill of its own (the same guests, paying separately), and the guests of
+//                 each part are the ones given.
 //   Split again   on a table that is already split, the parts are re-cut: a part that is listed
-//                 with its id keeps its party and may change size, a part with no id is new and
-//                 free, and a free part that is left out is removed.
+//                 with its id keeps its party and may change size, but never to fewer seats than
+//                 its guests; a part with no id is new and free; a free part left out is removed.
 ws.on('table.split', async (user, payload) => {
   const wanted = Array.isArray(payload.parts) ? payload.parts : [];
 
@@ -116,14 +126,6 @@ ws.on('table.split', async (user, payload) => {
     if (seats.some((n) => !Number.isInteger(n) || n < 1)) throw fail('bad_seats', 'Give every part at least one seat');
     const total = seats.reduce((a, b) => a + b, 0);
     if (total !== parent.seats) throw fail('seats_mismatch', `${parent.label} has ${parent.seats} seats; the parts add up to ${total}`, 409);
-
-    // The people at each part: the party's order follows its part (the first part on a first split).
-    for (const [n, part] of wanted.entries()) {
-      const guests = Number(part.guests);
-      if (!Number.isInteger(guests) || guests < 1 || guests > 99) continue;
-      const tableId = part.id ? Number(part.id) : n === 0 && parent.status !== 'split' ? parent.id : null;
-      if (tableId) await client.query(`UPDATE orders SET guests = $1 WHERE table_id = $2 AND restaurant_id = $3 AND status NOT IN ${FINISHED_SQL}`, [guests, tableId, user.restaurantId]);
-    }
     return parent.status === 'split' ? splitAgain(client, user, parent, wanted, seats) : splitFirst(client, user, parent, wanted, seats);
   });
 
@@ -171,6 +173,21 @@ async function splitFirst(client, user, parent, wanted, seats) {
     return mine;
   });
   const moving = allocation.some((a) => a.size > 0);
+  if (!moving && original) {
+    // Splitting the seating: the party stays together on the first part with exactly its seats,
+    // and only the free seats make further parts. An order without a guest count takes the one
+    // given for the first part (the app asks), else counts as one guest.
+    const party = original.guests > 0 ? original.guests : guestsOf(wanted[0]) ?? 1;
+    const free = parent.seats - party;
+    if (free < 1) throw fail('no_free_seats', `The ${plural(party, 'guest')} at ${parent.label} fill all ${plural(parent.seats, 'seat')}, so there are no free seats to split off`, 409);
+    const most = Math.min(1 + free, MAX_PARTS);
+    if (wanted.length > most) throw fail('bad_parts', `Split ${parent.label} into ${most === 2 ? '2' : `2 to ${most}`} tables: its ${plural(party, 'guest')} stay together on ${parent.label}.1 and the ${plural(free, 'free seat')} make the rest`);
+    if (seats[0] !== party) throw fail('party_seats', `The ${plural(party, 'guest')} at ${parent.label} stay together: ${parent.label}.1 keeps their ${plural(party, 'seat')}`, 409);
+    if (!(original.guests > 0)) await client.query('UPDATE orders SET guests = $1 WHERE id = $2', [party, original.id]);
+  } else if (moving && guestsOf(wanted[0])) {
+    // Splitting the bill: the people at the party's own part are the ones given.
+    await client.query('UPDATE orders SET guests = $1 WHERE id = $2', [guestsOf(wanted[0]), original.id]);
+  }
   if (moving) {
     // Moving dishes makes a second bill, so the first one must still be open and untouched by money.
     if (SETTLED.includes(original.status)) throw fail('paid', 'This bill is already paid, so its dishes cannot be moved', 409);
@@ -300,6 +317,15 @@ async function splitAgain(client, user, parent, wanted, seats) {
     if (!child || kept.has(child.id)) throw fail('bad_part', 'One of these parts is no longer there. Open the table again.', 409);
     kept.set(child.id, n);
   });
+
+  // A part with people at it keeps at least as many seats as it has guests.
+  const seated = (await client.query(`SELECT table_id, guests FROM orders WHERE table_id = ANY($1::int[]) AND status NOT IN ${FINISHED_SQL}`, [children.map((c) => c.id)])).rows;
+  for (const child of children) {
+    const order = seated.find((o) => o.table_id === child.id);
+    if (!order || !kept.has(child.id)) continue;
+    const need = order.guests > 0 ? order.guests : 1;
+    if (seats[kept.get(child.id)] < need) throw fail('party_seats', `${child.label} has ${plural(need, 'guest')}, so it keeps at least ${plural(need, 'seat')}`, 409);
+  }
 
   // A part that is left out is removed, which is only possible while nobody is using it.
   const removed = children.filter((c) => !kept.has(c.id));

@@ -104,7 +104,7 @@ export function TableCard({ table, mine, taken, busy, now, shakeKey, showAmount,
           ) : null}
         </View>
         <View style={{ gap: 2 }}>
-          <Txt size={12} color="textSecondary" tabular numberOfLines={1}>
+          <Txt size={12} color="textSecondary" tabular numberOfLines={2}>
             {factsOf(table, now, showAmount, false, mine && !taken)}
           </Txt>
           <StateLine table={table} taken={taken} freeText={freeText} />
@@ -175,7 +175,7 @@ export function TableGroupCard({ unit, now, showAmount, isMine = () => false, is
                       {split ? table.label : unitLabel(unit)}
                     </Txt>
                     <StateLine table={table} taken={taken} freeText={freeText} />
-                    <Txt size={12} color="textSecondary" tabular numberOfLines={1}>
+                    <Txt size={12} color="textSecondary" tabular numberOfLines={2}>
                       {split ? factsOf(table, now, showAmount, true, mine && !taken) : factsOf({ ...table, seats: unitSeats(unit) }, now, showAmount, true, mine && !taken)}
                     </Txt>
                   </View>

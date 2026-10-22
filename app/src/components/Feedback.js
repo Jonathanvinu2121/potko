@@ -9,13 +9,15 @@ import { Skeleton } from './Skeleton';
 
 // A big green tick with what just happened: "Table split successfully", "Payment successful".
 // Anything below (a summary, the buttons) is passed as children.
-export function Success({ title, text, children }) {
+// tone 'warning' is for a result that is done but not all good (an import with rows left out).
+export function Success({ title, text, children, tone = 'success' }) {
   const t = useTheme();
+  const warn = tone === 'warning';
   return (
     <View style={{ alignItems: 'center', gap: 8, paddingTop: 8 }}>
-      <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: t.c.successTint, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: t.c.success, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="check-bold" size={32} color="onPrimary" />
+      <View style={{ width: 84, height: 84, borderRadius: 42, backgroundColor: warn ? t.c.warningTint : t.c.successTint, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: warn ? t.c.warning : t.c.success, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={warn ? 'exclamation-thick' : 'check-bold'} size={32} color="onPrimary" />
         </View>
       </View>
       <Txt size={20} weight={700} center accessibilityRole="header" style={{ marginTop: 4 }}>

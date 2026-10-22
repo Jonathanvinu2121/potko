@@ -7,7 +7,7 @@ import { useDraft, totals } from '../../../src/store/draft';
 import { useAuth } from '../../../src/store/auth';
 import { useLive } from '../../../src/store/live';
 import { toast } from '../../../src/store/toast';
-import { money, orderLabel, tableName } from '../../../src/lib/format';
+import { money, orderLabel, plural, tableName } from '../../../src/lib/format';
 import { usePrices } from '../../../src/lib/prices';
 import { Screen } from '../../../src/components/Screen';
 import { AppHeader } from '../../../src/components/AppHeader';
@@ -95,7 +95,7 @@ export default function Menu() {
       <Pressable
         onPress={() => setCategoryId(category.id)}
         accessibilityRole="button"
-        accessibilityLabel={`${category.name}, ${dishes.length} dishes`}
+        accessibilityLabel={`${category.name}, ${plural(dishes.length, 'dish', 'dishes')}`}
         style={({ pressed }) => ({
           flex: 1,
           maxWidth: `${100 / columns}%`,

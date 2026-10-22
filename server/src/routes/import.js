@@ -85,7 +85,9 @@ router.post('/preview', async (req, res) => {
     return res.json({ needs_mapping: true, kind, filename: String(req.body.filename), sheet: records.sheet, columns, fields, missing: records.missing.map((f) => importer.FIELDS[f].label) });
   }
 
-  const counts = importer.classify(records, await loadExisting(db, restaurantId), kind);
+  if (records.row_count === 0) throw new AppError(400, 'bad_file', 'The file has its headings but no rows under them');
+
+  const counts = importer.classify(records, await loadExisting(db, restaurantId));
   const id = crypto.randomBytes(12).toString('base64url');
   await db.query(
     'INSERT INTO imports (id, restaurant_id, user_id, kind, filename, rows) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -103,10 +105,15 @@ router.post('/preview', async (req, res) => {
     fields,
     counts,
     new_kitchens: records.new_kitchens || [],
+    // Categories already on the menu that dishes of this file go into.
+    reused: records.reused || [],
     orphans: records.orphans || [],
     records: [...records.categories.map(brief('category')), ...records.items.map(brief('item'))].slice(0, 500),
   });
 });
+
+// Why a row could not be saved, in words for the person importing.
+const saveProblem = (err) => (err.status ? err.message : err.code === '23505' ? 'That Item ID or name is already used by another dish. Use another.' : 'Could not be saved');
 
 // Runs one row's writes so that a failure undoes only that row.
 async function row(client, record, fn) {
@@ -116,20 +123,29 @@ async function row(client, record, fn) {
     await client.query('RELEASE SAVEPOINT import_row');
   } catch (err) {
     await client.query('ROLLBACK TO SAVEPOINT import_row');
+    await client.query('RELEASE SAVEPOINT import_row');
     record.result = 'failed';
-    record.result_message = err.status ? err.message : err.code === '23505' ? 'That code or name is already used (possibly by a deleted item). Use another.' : 'Could not be saved';
+    record.result_message = saveProblem(err);
     if (!err.status && err.code !== '23505') console.error('import row failed:', err.message);
   }
 }
 
+// The first number of the advisory lock that lets one menu import run at a time per restaurant.
+const IMPORT_LOCK = 7101;
+
 // POST /menu/import/:id/commit { mode: 'create' | 'update' }
 //   create  add what is new; anything already on the menu is skipped
-//   update  add what is new and update what matches (by item code, else by category and name)
+//   update  add what is new and update what matches (by Item ID, else by category and name)
+// A new category is created together with its dishes, and only if at least one of them is saved
+// (or the file lists it without dishes). The summary is counted from what was actually saved.
 router.post('/:id/commit', async (req, res) => {
   const { restaurantId } = req.user;
   const mode = req.body?.mode === 'update' ? 'update' : 'create';
 
   const result = await db.tx(async (client) => {
+    // One import at a time: a second one waits, then sees what the first created, so two imports
+    // at once cannot both create the same category.
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [IMPORT_LOCK, restaurantId]);
     const found = await client.query('SELECT * FROM imports WHERE id = $1 AND restaurant_id = $2 FOR UPDATE', [req.params.id, restaurantId]);
     const job = found.rows[0];
     if (!job) throw new AppError(404, 'no_import', 'This import has expired. Upload the file again.');
@@ -137,38 +153,12 @@ router.post('/:id/commit', async (req, res) => {
     if (job.committed_at) return { summary: job.summary, records: job.rows, repeated: true };
 
     const records = job.rows;
-    for (const r of [...records.categories, ...records.items]) { r.errors = r.errors.filter((e) => !e.startsWith('Category "') && !e.startsWith('Kitchen terminal "')); }
-    // The menu may have changed since the preview, so everything is matched again now.
-    importer.classify(records, await loadExisting(client, restaurantId), job.kind);
-
-    for (const c of records.categories) {
-      if (c.status === 'error') { c.result = 'failed'; continue; }
-      if (c.status === 'update') {
-        if (mode !== 'update' || c.changes.length === 0) { c.result = 'skipped'; c.result_message = mode === 'update' ? 'Nothing to change' : 'Already on the menu'; continue; }
-        await row(client, c, async () => {
-          const set = {};
-          if (c.name && c.changes.some((ch) => ch.field === 'Name')) set.name = c.name;
-          if (c.code) set.code = c.code;
-          if (c.description !== null) set.description = c.description || null;
-          if (c.active !== null) set.active = c.active;
-          const cols = Object.keys(set);
-          if (cols.length) await client.query(`UPDATE categories SET ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`, [c.match_id, ...cols.map((k) => set[k])]);
-          if (c.position !== null) await client.query('UPDATE categories SET sort = $1 WHERE id = $2', [c.position, c.match_id]);
-          c.result = 'updated';
-        });
-        continue;
-      }
-      await row(client, c, async () => {
-        await menu.insertCategory(client, restaurantId, req.user.id, { name: c.name, code: c.code, description: c.description, active: c.active ?? true }, { position: c.position, action: 'category.import' });
-        c.result = 'created';
-      });
+    // Previews made before version 2.0.2 kept the checks against the menu as plain errors.
+    for (const r of [...records.categories, ...records.items]) {
+      if (!r.derived) r.errors = r.errors.filter((e) => !e.startsWith('Category "') && !e.startsWith('Kitchen terminal "'));
     }
-
-    const categories = (await client.query('SELECT * FROM categories WHERE restaurant_id = $1 AND deleted_at IS NULL', [restaurantId])).rows;
-    // A dish's category: by its Category ID first, else by name.
-    const categoryOf = (item) =>
-      (item.category_code && categories.find((c) => c.code && c.code.toUpperCase() === item.category_code.toUpperCase())) ||
-      categories.find((c) => c.name.toLowerCase() === String(item.category).trim().toLowerCase());
+    // The menu may have changed since the preview, so everything is matched again now.
+    importer.classify(records, await loadExisting(client, restaurantId));
 
     // Kitchens the file names that the restaurant did not have: made now, so their dishes can go to them.
     const madeKitchens = [];
@@ -193,10 +183,26 @@ router.post('/:id/commit', async (req, res) => {
       item.terminal_id = item.terminal_ids?.[0] ?? null;
     }
 
-    for (const item of records.items) {
-      if (item.status === 'error') { item.result = 'failed'; continue; }
-      const category = categoryOf(item);
-      if (!category) { item.result = 'failed'; item.result_message = `Category "${item.category}" was not imported`; continue; }
+    // Categories already on the menu: changed when updating, else left exactly as they are.
+    for (const c of records.categories) {
+      if (c.status === 'error') { c.result = 'failed'; continue; }
+      if (c.status !== 'update') continue;
+      if (mode !== 'update' || c.changes.length === 0) { c.result = 'skipped'; c.result_message = mode === 'update' ? 'Nothing to change' : 'Already on the menu'; continue; }
+      await row(client, c, async () => {
+        const set = {};
+        if (c.name && c.changes.some((ch) => ch.field === 'Name')) set.name = c.name;
+        if (c.code) set.code = c.code;
+        if (c.description !== null) set.description = c.description || null;
+        if (c.active !== null) set.active = c.active;
+        const cols = Object.keys(set);
+        if (cols.length) await client.query(`UPDATE categories SET ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`, [c.match_id, ...cols.map((k) => set[k])]);
+        if (c.position !== null) await client.query('UPDATE categories SET sort = $1 WHERE id = $2', [c.position, c.match_id]);
+        c.result = 'updated';
+      });
+    }
+
+    // One dish into its category: a new dish, or (when updating) the dish it matches.
+    const saveItem = async (item, category) => {
       const fields = {
         name: item.name,
         ...(item.description !== null ? { description: item.description || null } : {}),
@@ -211,8 +217,16 @@ router.post('/:id/commit', async (req, res) => {
         ...(item.open_price !== null && item.open_price !== undefined ? { open_price: item.open_price } : {}),
         ...(item.active !== null ? { available: item.active } : {}),
       };
+      const into = { id: category.id, name: category.name };
       if (item.status === 'update') {
-        if (mode !== 'update' || item.changes.length === 0) { item.result = 'skipped'; item.result_message = mode === 'update' ? 'Nothing to change' : 'Already on the menu'; continue; }
+        if (mode !== 'update' || item.changes.length === 0) {
+          item.result = 'skipped';
+          const otherDish = item.match_by === 'code' && importer.sameKey(item.match_name) !== importer.sameKey(item.name);
+          item.result_message = mode === 'update'
+            ? 'Nothing to change'
+            : otherDish ? `Item ID ${item.code} is already used by ${item.match_name}${item.match_category ? ` (${item.match_category})` : ''}` : 'Already on the menu';
+          return;
+        }
         await row(client, item, async () => {
           const set = { ...fields, category_id: category.id, ...(item.terminal_ids?.length ? { terminal_id: item.terminal_ids[0], terminal_ids: item.terminal_ids } : {}), ...(item.position !== null ? { sort: item.position } : {}) };
           const cols = Object.keys(set);
@@ -223,16 +237,61 @@ router.post('/:id/commit', async (req, res) => {
           );
           await audit(client, { restaurantId, userId: req.user.id, action: 'menu.import_update', entity: 'menu_item', entityId: item.match_id, old: before, new: set });
           item.saved_id = item.match_id;
+          item.saved_category = into;
           item.result = 'updated';
         });
-        continue;
+        return;
       }
       await row(client, item, async () => {
         const id = await menu.insertItem(client, restaurantId, req.user.id, category, { customisations: [], ...fields }, { code: item.code, terminalId: item.terminal_id ?? null, terminalIds: item.terminal_ids?.length ? item.terminal_ids : null, action: 'menu.import_add' });
         if (item.position !== null) await client.query('UPDATE menu_items SET sort = $1 WHERE id = $2', [item.position, id]);
         item.saved_id = id;
+        item.saved_category = into;
         item.result = 'created';
       });
+    };
+
+    // Each new category with its dishes, as one unit: when none of its dishes can be saved, the
+    // category is taken back out too, so no category is left behind empty because its dishes failed.
+    for (const c of records.categories) {
+      if (c.status !== 'new') continue;
+      const mine = records.items.filter((i) => i.category_key === c.key && i.status !== 'error');
+      await client.query('SAVEPOINT import_category');
+      try {
+        const id = await menu.insertCategory(client, restaurantId, req.user.id, { name: c.name, code: c.code, description: c.description, active: c.active ?? true }, { position: c.position, action: 'category.import' });
+        const category = (await client.query('SELECT * FROM categories WHERE id = $1', [id])).rows[0];
+        for (const item of mine) await saveItem(item, category);
+        const tried = mine.filter((i) => i.result !== 'skipped');
+        if (tried.length > 0 && tried.every((i) => i.result === 'failed')) {
+          await client.query('ROLLBACK TO SAVEPOINT import_category');
+          c.result = 'failed';
+          c.result_message = 'Not created, because none of its dishes could be saved';
+        } else {
+          c.result = 'created';
+          c.saved_id = id;
+        }
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT import_category');
+        c.result = 'failed';
+        c.result_message = saveProblem(err);
+        for (const item of mine) Object.assign(item, { result: 'failed', result_message: `Its category "${c.name}" could not be created: ${c.result_message}`, saved_id: undefined, saved_category: undefined });
+      }
+      await client.query('RELEASE SAVEPOINT import_category');
+    }
+
+    // The dishes for categories already on the menu.
+    const categories = (await client.query('SELECT * FROM categories WHERE restaurant_id = $1 AND deleted_at IS NULL', [restaurantId])).rows;
+    // A dish's category: the one it was matched to, else by its Category ID, else by name.
+    const categoryOf = (item) =>
+      categories.find((c) => c.id === item.category_match_id) ||
+      (item.category_code && categories.find((c) => c.code && importer.sameKey(c.code) === importer.sameKey(item.category_code))) ||
+      categories.find((c) => importer.sameKey(c.name) === importer.sameKey(item.category));
+    for (const item of records.items) {
+      if (item.result) continue; // saved, or not, with its new category above
+      if (item.status === 'error') { item.result = 'failed'; continue; }
+      const category = categoryOf(item);
+      if (!category) { item.result = 'failed'; item.result_message = `Category "${item.category || item.category_code}" was not imported`; continue; }
+      await saveItem(item, category);
     }
 
     // "Go well with": linked once every item of the file is on the menu, so a dish may point at
@@ -246,6 +305,7 @@ router.post('/:id/commit', async (req, res) => {
       }
     }
 
+    // The summary, counted from what was saved.
     const tally = (list) => ({
       created: list.filter((r) => r.result === 'created').length,
       updated: list.filter((r) => r.result === 'updated').length,
@@ -254,15 +314,29 @@ router.post('/:id/commit', async (req, res) => {
     });
     const cats = tally(records.categories);
     const items = tally(records.items);
+    const made = records.categories.filter((c) => c.result === 'created');
+    const madeIds = new Set(made.map((c) => c.saved_id));
+    const reused = new Map();
+    for (const item of records.items) {
+      if ((item.result === 'created' || item.result === 'updated') && item.saved_category && !madeIds.has(item.saved_category.id)) reused.set(item.saved_category.id, item.saved_category.name);
+    }
+    const repeated = records.items.reduce((n, i) => n + (i.repeats || 0), 0);
+    const failedRows = new Set([...records.categories, ...records.items].filter((r) => r.result === 'failed').flatMap((r) => r.rows));
     const summary = {
       mode,
       filename: job.filename,
+      rows: records.row_count ?? null,
       created: cats.created + items.created,
       updated: cats.updated + items.updated,
       skipped: cats.skipped + items.skipped,
       failed: cats.failed + items.failed + (records.orphans || []).length,
       categories: cats,
       items,
+      categories_created: made.map((c) => c.name),
+      categories_reused: [...reused.values()],
+      duplicates: items.skipped + repeated,
+      repeated_rows: repeated,
+      rows_failed: failedRows.size + (records.orphans || []).length,
       kitchens: madeKitchens,
       warnings: [...records.categories, ...records.items].reduce((n, r) => n + r.warnings.length, 0),
     };

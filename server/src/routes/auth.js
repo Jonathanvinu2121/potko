@@ -147,10 +147,13 @@ router.post('/setup', async (req, res) => {
 //   - it is always off on a hosted server (NODE_ENV=production, or Render),
 //   - it is refused for requests that arrive through a tunnel or proxy (a shared public link),
 //     unless DEV_LOGIN=public was set on purpose.
+// The one hosted exception is the public demo (src/demo.js): it runs on its own throwaway database
+// in memory on the same machine, never on a restaurant's database.
 function devAllowed(req) {
   const flag = process.env.DEV_LOGIN;
   if (flag !== '1' && flag !== 'public') return false;
-  if (process.env.NODE_ENV === 'production' || process.env.RENDER) return false;
+  const demo = process.env.POTKO_DEMO === 'in-memory' && /@127\.0\.0\.1:\d+\//.test(process.env.DATABASE_URL || '');
+  if ((process.env.NODE_ENV === 'production' || process.env.RENDER) && !demo) return false;
   if (flag === 'public') return true;
   return !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'] && !req.headers['cf-ray'];
 }

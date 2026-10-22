@@ -35,7 +35,7 @@ test('rows of one item fold into portions and add-ons', async () => {
   assert.deepEqual(item.groups, [{ name: 'Extras', required: false, min: 0, max: 2, options: [{ name: 'Extra Cheese', price: 30 }, { name: 'Mint Chutney', price: 10 }] }]);
   assert.equal(item.terminal_id, 2);
   assert.equal(item.status, 'new');
-  assert.deepEqual(counts, { new: 1, update: 0, error: 0, warnings: 0, categories: 0, items: 1, kitchens: 0 });
+  assert.deepEqual(counts, { new: 1, update: 0, error: 0, warnings: 0, rows: 2, error_rows: 0, new_categories: 0, reused: 1, categories: 0, items: 1, kitchens: 0 });
 });
 
 test('the compact "Regular|180,Large|240" style is read too', async () => {

@@ -1,8 +1,10 @@
 // POTKO server: REST (login and data) and WebSocket (live events) in one service.
 require('dotenv').config({ quiet: true });
 
+const fs = require('fs');
 const http = require('http');
 const os = require('os');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
@@ -24,6 +26,15 @@ app.use((req, res, next) => (/^\/(menu\/import\/preview|images)\/?$/.test(req.pa
 
 // Render pings this to check the service is up. It does not touch the database.
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+// The public demo (src/demo.js) serves the web app from this same address. A page the browser asks
+// for (Accept: text/html, a path without a file extension) gets the app; the app's own calls ask
+// for JSON and reach the routes below.
+const web = process.env.POTKO_WEB_DIR;
+if (web && fs.existsSync(path.join(web, 'index.html'))) {
+  app.use(express.static(web, { index: false, maxAge: '1h' }));
+  app.get(/.*/, (req, res, next) => (/\btext\/html\b/.test(req.headers.accept || '') && !path.extname(req.path) ? res.sendFile(path.join(web, 'index.html')) : next()));
+}
 
 app.use('/auth', require('./routes/auth'));
 
