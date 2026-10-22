@@ -4,3 +4,5 @@ node_modules/
 .pgdata.backup-*/
 # The demo web build keeps its fonts and images under assets/node_modules: those are part of the build.
 !demo-web/assets/node_modules/
+# The demo database snapshot is made at build time (npm run demo:snapshot).
+demo-db.tgz

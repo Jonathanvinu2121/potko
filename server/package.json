@@ -14,7 +14,9 @@
     "db:migrate": "node src/scripts/db.js migrate",
     "db:reset": "node src/scripts/db.js reset",
     "db:clear": "node src/scripts/db.js clear",
-    "restaurant:add": "node src/scripts/add-restaurant.js"
+    "restaurant:add": "node src/scripts/add-restaurant.js",
+    "demo:snapshot": "node src/demo-snapshot.js",
+    "demo": "node --expose-gc src/demo.js"
   },
   "engines": {
     "node": ">=20"

@@ -19,15 +19,25 @@ const freePort = () => new Promise((resolve) => {
   });
 });
 
-(async () => {
+// The demo database: from the snapshot made at build time (src/demo-snapshot.js), else built afresh.
+async function demoDatabase() {
+  const snapshot = path.join(__dirname, '..', 'demo-db.tgz');
+  if (fs.existsSync(snapshot)) return PGlite.create({ loadDataDir: new Blob([fs.readFileSync(snapshot)]) });
   const pg = await PGlite.create(); // in memory
   await pg.exec(sql('schema.sql'));
   const { migrate } = require('./migrate');
   await migrate({ run: (text) => pg.exec(text), rows: async (text) => (await pg.query(text)).rows });
   await pg.exec(sql('seed.sql'));
+  return pg;
+}
+
+(async () => {
+  const started = Date.now();
+  const pg = await demoDatabase();
   // The database engine takes about 300 MB; what setting it up used is handed back before serving
   // (started with node --expose-gc), to stay well inside a small host's memory.
   global.gc?.();
+  console.log(`demo database ready in ${Date.now() - started} ms`);
   const dbPort = await freePort();
   const socket = new PGLiteSocketServer({ db: pg, port: dbPort, host: '127.0.0.1', maxConnections: 4 });
   await socket.start();

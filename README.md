@@ -220,8 +220,11 @@ A link anyone can open to try POTKO, apart from the client's server: the `potko-
   `EXPO_PUBLIC_API_URL=same-origin npx expo export --platform web --output-dir ../server/demo-web` in `app/`);
 - one-tap sign-in (developer mode), which a hosted server allows only for this in-memory demo.
 
-To update it: rebuild `server/demo-web` on the `demo` branch and push; Render deploys it. It needs about 350 MB of
-memory (the in-memory database takes about 300 MB), inside the free plan's 512 MB.
+The build (`npm install && npm run demo:snapshot`) saves the demo database as `demo-db.tgz`, so each start
+loads it in about half a second instead of building it again (about 3 s here, far more on the free plan's tenth
+of a CPU); without the file it is built at start. To update the demo: rebuild `server/demo-web` on the `demo`
+branch and push; Render deploys it. It needs about 350 MB of memory (the in-memory database takes about 300 MB),
+inside the free plan's 512 MB.
 
 Free-plan limits to know about:
 
