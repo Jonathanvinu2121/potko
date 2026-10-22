@@ -22,3 +22,23 @@ services:
         generateValue: true
       - key: NODE_VERSION
         value: "22"
+
+  # The public demo: a link anyone can open to try POTKO. The same server with a database of its own
+  # in memory, filled with the demo restaurant (it starts afresh whenever the service restarts), and
+  # the web app at the same address, with one-tap sign-in. It never reads DATABASE_URL, so it cannot
+  # reach the client's data. Deployed from the demo branch (see README, Public demo).
+  - type: web
+    name: potko-demo
+    runtime: node
+    plan: free
+    region: singapore
+    branch: demo
+    rootDir: server
+    buildCommand: npm install # includes the in-memory database (a dev dependency)
+    startCommand: node --expose-gc src/demo.js
+    healthCheckPath: /health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_VERSION
+        value: "22"
