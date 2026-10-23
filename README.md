@@ -4,6 +4,9 @@ Restaurant POS and kitchen (KOT) app for 3–5 restaurants. Waiters take orders 
 kitchen terminal sees its own tickets instantly, and the manager runs the floor, settles bills and approves
 sensitive requests with a PIN.
 
+Taking the project over? Start with [`HANDOVER.md`](HANDOVER.md): the state of everything, how it works, its
+limits, how to scale it and what to do next.
+
 - `app/` — the Expo (React Native) app. One codebase for phone, tablet and web.
 - `server/` — Node.js: Express for login and data, `ws` for live events, PostgreSQL for storage.
 - `spec/` — the product specification and design sheets this version was built from.
@@ -12,7 +15,7 @@ sensitive requests with a PIN.
 
 | Role | Screens |
 |---|---|
-| **Waiter** | New order (dine-in with table lock, delivery, in-car takeaway), the tables of their own dining areas, menu with name/code search, portions and paid add-ons, order status as tags (edit, remove, add more, replace an unavailable dish, request a cancel or void), the Tables screen (tap a free table to seat guests, tap a busy one to open its order and add items; hold a table for its operations: split, merge, transfer at any time, separate, close), Ready tab, Given Orders narrowed by floor and dining area, bill with discount and payment (or "send bill to counter" when they may not take payments or see bills) |
+| **Waiter** | New order (dine-in with table lock, delivery, in-car takeaway), the tables of their own dining areas, menu with name/code search, portions and paid add-ons, order status as tags (edit, remove, add more, replace an unavailable dish, request a cancel or void), the Tables screen (tap a free table to seat guests, tap a busy one to open its order and add items; hold a table for its operations: split, merge, transfer at any time, separate, close), Ready tab, Given Orders narrowed by floor and dining area, bill with discount and payment if they take payments; otherwise **Close Table** once every dish is served (the bill goes to the counter, the table is free, and they never see an amount) |
 | **Chef** | One kitchen board for the kitchens they are assigned to, in three sections: **New orders** (Deny or **Accept**), **Preparing** (accepted tickets: **Start preparing**, then tick each dish ready, All ready) and **Done**. Everything is done on the board, so the chef never has to open a ticket; a ticket can still be opened on its own for a closer look and a prep time. **My dishes** switches their own dishes off when one runs out |
 | **Cashier** | Signs in at the manager desk and gets Tables and Payments: the payment queue, bill review, discounts within their limit, split payments, print and share the bill |
 | **Manager** | Four places: **Overview** (service running now, today's numbers, what needs attention), **Tables** (floor view of one dining area at a time, and list view of any mix of dining areas ticked in the picker; tap a busy table for its order, hold it for split, merge and transfer; order detail with status tags and full history), **Payments & Approvals** (payment queue, bill, approvals with a 4-digit PIN), **More** (Tables, Kitchens, Menu, Staff, Reports, Settings). A manager sees and manages only the roles below manager |
@@ -150,8 +153,9 @@ it only works on the computer (or the local network) the test server runs on.
 permissions and the staff hierarchy, table access, KOT routing, a kitchen's dishes, the kitchen flow (accept,
 start, ready), add-ons, discounts and approvals, the PIN lock, payments, split (a seated party stays together:
 `test/split.test.js`), merge, join and transfer, floors, paid bills staying fixed, menu import into existing
-and new categories (`test/menu-import.test.js`), first-run set-up, staff sessions, reports, developer sign-in
-and the audit log.
+and new categories (`test/menu-import.test.js`), first-run set-up, staff sessions, reports, developer sign-in,
+the audit log, keeping the server awake (`test/keep-awake.test.js`) and Close Table without payment with the
+manager's Reopen (`test/close-table.test.js`).
 
 **Upgrading:** changes to the database are in `server/sql/migrations/`. The server applies the ones it has not
 run yet every time it starts (each exactly once, existing data is kept); `npm run db:migrate` does the same
@@ -307,9 +311,10 @@ disconnected the app shows a red "Reconnecting…" banner and blocks sending.
 - **WebSocket** (`/ws?token=JWT`) carries live actions and events as JSON `{ type, payload, id }`. The server
   answers every action with `{ type: "ack", id, ok, ... }` and runs a repeated `id` only once.
   - App → server: `table.lock`, `table.release`, `order.create`, `order.addItems`, `item.edit`, `item.remove`,
-    `chef.start`, `chef.deny`, `chef.itemReady`, `chef.allReady`, `waiter.deliver`,
+    `chef.accept`, `chef.start`, `chef.deny`, `chef.itemReady`, `chef.allReady`, `waiter.deliver`,
     `discount.apply`, `approval.request`, `approval.decide`, `bill.request`, `payment.add`, `payment.refund`,
-    `order.close`, `table.split`, `table.merge`, `table.unjoin`, `table.transfer`, `ping`.
+    `order.close`, `order.handover` (Close Table without payment), `order.reopen`, `table.split`, `table.merge`,
+    `table.unjoin`, `table.transfer`, `ping`.
   - Server → apps: `table.updated`, `tables.changed`, `floor.updated`, `order.created`, `order.updated`
     (carries every dish, so there is no separate item event), `chef.denied`, `ready.count`,
     `approval.requested`, `approval.decided`, `staff.presence`, `me.updated`, `menu.updated`,
@@ -362,7 +367,8 @@ server/
   src/ws/tables.js      table.lock, table.release and the 5-minute stale-lock sweep
   src/ws/floor.js       table.split (by seats), table.merge (parts, or joining whole tables), table.unjoin, table.transfer
   src/ws/chef.js        chef.start, chef.deny, chef.itemReady, chef.allReady
-  src/ws/billing.js     discounts, approvals with the PIN, bill.request, payments, refunds, order.close
+  src/ws/billing.js     discounts, approvals with the PIN, bill.request, payments, refunds, order.close,
+                        order.handover (Close Table without payment) and order.reopen
   src/ws/publish.js     sends a change to every screen that should see it
   src/scripts/          db.js (schema / migrate / setup / reset), local-db.js, add-restaurant.js, sql.js
   sql/schema.sql        the first version's tables; sql/migrations/ everything since; sql/seed.sql demo data
