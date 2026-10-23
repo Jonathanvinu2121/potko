@@ -159,6 +159,9 @@ function checkOwner(user, waiterId) {
   }
 }
 
+// An order whose table its waiter closed is locked until a manager reopens it (order.reopen).
+const CLOSED = 'This table was closed and its bill is with the counter. A manager can reopen it.';
+
 // Locks an order that can still be changed for this transaction and checks who is asking.
 async function lockOwnOrder(client, user, orderId) {
   const { rows } = await client.query(
@@ -167,13 +170,14 @@ async function lockOwnOrder(client, user, orderId) {
   );
   if (!rows[0]) throw new AppError(404, 'no_order', 'This order is no longer open');
   checkOwner(user, rows[0].waiter_id);
+  if (rows[0].handed_over_at) throw new AppError(409, 'order_closed', CLOSED);
   return rows[0];
 }
 
 // Locks one dish (and its order) and checks who is asking.
 async function lockOwnItem(client, user, itemId) {
   const { rows } = await client.query(
-    `SELECT i.*, o.waiter_id
+    `SELECT i.*, o.waiter_id, o.handed_over_at
        FROM order_items i JOIN orders o ON o.id = i.order_id
       WHERE i.id = $1 AND o.restaurant_id = $2 AND o.status NOT IN ${SETTLED_SQL}
         FOR UPDATE OF i, o`,
@@ -181,6 +185,7 @@ async function lockOwnItem(client, user, itemId) {
   );
   if (!rows[0]) throw new AppError(404, 'no_item', 'This item is no longer on an open order');
   checkOwner(user, rows[0].waiter_id);
+  if (rows[0].handed_over_at) throw new AppError(409, 'order_closed', CLOSED);
   return rows[0];
 }
 
@@ -390,4 +395,4 @@ ws.on('waiter.deliver', async (user, payload) => {
   return { delivered, orders };
 });
 
-module.exports = { lockOwnOrder, checkOwner };
+module.exports = { lockOwnOrder, checkOwner, CLOSED };

@@ -86,12 +86,18 @@ These are checked on the server for every action, so a modified or out-of-date a
 - **Only what is assigned reaches a device** (`server/src/scope.js`). A waiter is sent only their own dining
   areas, tables and orders; a chef only the dishes of their kitchen terminals (and a menu of just those
   dishes, which they may switch off when one runs out). Without "may see prices" the dish prices are taken
-  out of everything sent; the bill total stays, so a waiter who takes payments can still collect it.
+  out of everything sent; the bill total stays, so a waiter who takes payments can still collect it. A
+  waiter who does not take payment is sent no amount at all: no dish prices, no bill, no payments.
 - **A dish can show at several kitchens.** Usually one; a dish ticked at several terminals (in the dish form
   or under More, Kitchens) shows on every one of them, and any of those chefs can start it.
 - **Payment permission** for a waiter has three levels: take payment, close the table only (a manager or
   cashier takes the money), or no access (neither). A manager sets it, and price visibility, for waiters and
-  cashiers; every other permission is the admin's.
+  cashiers; every other permission is the admin's. Only a waiter who takes payment sees prices and bills.
+- **Close Table** (a waiter who closes the table only): when every dish is served, the waiter's order offers
+  Add Items or Close Table. Closing sends the bill to Payments, frees the table at once for the next guests
+  and locks the order (`order.handover`). A manager can reopen it on its table (`order.reopen`) while the
+  bill is unpaid and the table is still free: no guests seated and no newer order since the closing. Paying
+  a closed table finishes its order without touching the table.
 - **Open price.** A dish marked "Open Price" has no menu price; the waiter types it in when ordering.
 - **Sessions.** Signing in creates a session the server can end: log out one device or all, a password
   reset, a role change or deactivation sign the person out at once.
@@ -373,9 +379,9 @@ server/
 - **No SMS or email.** A new person's login, a reset password and a one-time login code are told to them by
   a manager.
 - **Approvals use the Manager PIN only.** There is no one-time code as a substitute.
-- **Hidden prices are hidden on the screen.** When "may see prices" is switched off for someone, their
-  screens leave the money out and their bills go to the counter; the app on their device still receives the
-  amounts from the server.
+- **Hidden amounts are left out of what the server sends.** Dish prices (and, for a waiter who does not take
+  payment, every bill amount) are taken out of the orders, tables, menu, requests and split or merge previews
+  sent to that person, and out of the answers to their own actions.
 - **A dish marked ready by mistake** cannot be un-marked from the kitchen board.
 - **Alerts are in-app only** (toast, sound, vibration). There are no push notifications when the app is closed.
 - **Tax** is one configurable GST rate (with a rate per dish where needed), shown as CGST + SGST. Check the

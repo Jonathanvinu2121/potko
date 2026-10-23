@@ -46,6 +46,8 @@ const WORDS = {
   'receipt.print': (e) => `Printed bill #${e.new?.number ?? ''}`.trim(),
   'receipt.share': (e) => `Shared bill #${e.new?.number ?? ''}`.trim(),
   'table.close': () => 'Closed the table',
+  'table.handover': (e) => `Closed the table; the bill (${money(e.new?.total)}) went to the counter`,
+  'order.reopen': () => 'Reopened a table its waiter had closed',
   'table.split': (e) => `Split ${table(e.old?.table)} into ${(e.new?.parts || []).map((p) => p.table).join(', ')}`,
   'table.merge': (e) => `Merged ${(e.old?.tables || (e.old?.parts || []).map((p) => p.table)).join(', ')} into ${table(e.new?.table)}`,
   'table.join': (e) => `Joined ${(e.old?.tables || []).join(' + ')} for one party`,

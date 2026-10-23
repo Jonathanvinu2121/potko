@@ -918,7 +918,9 @@ test('open-price dishes take the price typed in; a dish can be duplicated', asyn
   await amit.send('table.lock', { tableId: table('T13').id });
   assert.equal((await amit.try('order.create', { type: 'dine_in', tableId: table('T13').id, guests: 1, items: [{ menuItemId: dish.id, qty: 1 }] })).error, 'bad_price');
   const order = await amit.send('order.create', { type: 'dine_in', tableId: table('T13').id, guests: 1, items: [{ menuItemId: dish.id, qty: 2, price: 75 }] });
-  assert.equal(Number(order.items[0].unit_price), 75);
+  // Amit does not take payment, so he is never sent the price back; the manager sees it.
+  assert.equal(order.items[0].unit_price, undefined);
+  assert.equal(Number((await manager.get(`/orders/${order.id}`)).data.order.items[0].unit_price), 75);
   await manager.patch(`/menu/items/${dish.id}`, { open_price: false });
 
   const copy = await manager.post(`/menu/items/${dish.id}/duplicate`, {});

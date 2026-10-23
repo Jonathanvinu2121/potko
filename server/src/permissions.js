@@ -64,6 +64,13 @@ function permissionsOf(user) {
   }
   const own = user.permissions || {};
   for (const key of ALL) if (typeof own[key] === 'boolean') perms[key] = own[key];
+  // A waiter who does not take payment never sees an amount: no dish prices and no bill. One who
+  // takes payment always sees the bill (dish prices follow their "Sees prices" switch).
+  if (user.role === 'waiter') {
+    const takes = paymentLevel(user) === 'take';
+    perms['bills.view'] = takes;
+    if (!takes) perms['prices.view'] = false;
+  }
   // An admin can never be locked out of administering staff and settings.
   if (user.role === 'admin') {
     perms['staff.admin'] = true;

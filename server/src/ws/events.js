@@ -103,7 +103,8 @@ async function handleMessage(ws, raw) {
     if (key) recent.set(key, entry);
   }
   try {
-    send(ws, { type: 'ack', id, ok: true, payload: await entry.result });
+    // The answer is shaped like the live updates: a waiter never gets a price or bill they may not see.
+    send(ws, { type: 'ack', id, ok: true, payload: require('../scope').replyFor(ws.user, await entry.result) });
   } catch (err) {
     if (key) recent.delete(key); // a failed action may be tried again
     if (!err.status) console.error(`ws ${type} failed:`, err);

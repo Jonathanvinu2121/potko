@@ -13,5 +13,7 @@ export function usePrices() {
   };
 }
 
-// The bill is always shown: a waiter who takes payments needs the amount even when dish prices are hidden.
-export const useSeesBills = () => true;
+// The bill: the office always sees it, and so does a waiter who takes payments (even with dish
+// prices hidden). A waiter who does not take payment never sees an amount; they close the table
+// and the counter bills it (the server does not send them the amounts either).
+export const useSeesBills = () => useCan('bills.view');

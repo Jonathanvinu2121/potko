@@ -5,13 +5,14 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { AppError } = require('../errors');
 const { loginLimiter } = require('../auth');
-const { getOrder, refreshOrder, audit, allSettled, amountDue, billFor, restaurantSettings, releaseTable, DEAD, SETTLED_SQL } = require('../orders');
+const { getOrder, refreshOrder, audit, allSettled, amountDue, billFor, restaurantSettings, releaseTable, DEAD, SETTLED_SQL, TABLE_STATUS } = require('../orders');
 const { discountPct } = require('../bill');
 const { getApproval } = require('../approvals');
 const { can, need } = require('../permissions');
+const { approvalFor } = require('../scope');
 const ws = require('./events');
 const { publishOrder } = require('./publish');
-const { lockOwnOrder, checkOwner } = require('./orders');
+const { lockOwnOrder, checkOwner, CLOSED } = require('./orders');
 
 const text = (value, max) => String(value ?? '').trim().slice(0, max) || null;
 const money = (value) => Math.round(Number(value) * 100) / 100;
@@ -64,6 +65,8 @@ async function lockForBilling(client, user, orderId, { paidToo = false } = {}) {
   if (!mine && !counter && !can(user, 'orders.manage')) {
     throw new AppError(403, 'not_your_order', 'This order belongs to another waiter');
   }
+  // Once its waiter closed the table, the bill is the counter's.
+  if (rows[0].handed_over_at && user.role === 'waiter') throw new AppError(409, 'order_closed', CLOSED);
   return rows[0];
 }
 
@@ -182,7 +185,7 @@ ws.on('approval.request', async (user, payload) => {
 
   const approval = await getApproval(db, user.restaurantId, approvalId);
   await publishOrder(order); // the order now carries the pending request (the chef sees "cancel requested")
-  ws.toWhere(user.restaurantId, 'approval.requested', approval, (u) => can(u, 'approvals.decide') || u.id === user.id);
+  ws.toEach(user.restaurantId, 'approval.requested', approval, (u, a) => (can(u, 'approvals.decide') || u.id === user.id ? approvalFor(u, a) : null));
   return approval;
 });
 
@@ -276,7 +279,7 @@ ws.on('approval.decide', async (user, payload) => {
   const approval = await getApproval(db, user.restaurantId, approvalId);
   await publishOrder(order);
   // The person who asked hears at once; so does every approver's screen, to clear the inbox.
-  ws.toWhere(user.restaurantId, 'approval.decided', approval, (u) => can(u, 'approvals.decide') || u.id === approval.requested_by);
+  ws.toEach(user.restaurantId, 'approval.decided', approval, (u, a) => (can(u, 'approvals.decide') || u.id === a.requested_by ? approvalFor(u, a) : null));
   return approval;
 });
 
@@ -374,8 +377,10 @@ async function addPayment(client, user, orderId, { method, amount, received, ref
 
   const methods = new Set([...current.payments.filter((p) => p.kind === 'payment' && p.status === 'successful').map((p) => p.method), ...(pay > 0 ? [method] : [])]);
   const summary = methods.size > 1 ? 'split' : [...methods][0] || method;
-  // A table order stays "Paid" until the table is closed; delivery and takeaway are finished now.
-  const done = !current.table_id || close === true;
+  // A table order stays "Paid" until the table is closed; delivery and takeaway are finished now,
+  // and so is an order whose waiter already closed the table (it may hold new guests by now).
+  const handedOver = !!current.handed_over_at;
+  const done = !current.table_id || close === true || handedOver;
   await client.query(
     `UPDATE orders
         SET paid_total = $1, payment_method = $2, paid_at = now(), settled_by = $3, at_counter = false,
@@ -383,7 +388,7 @@ async function addPayment(client, user, orderId, { method, amount, received, ref
       WHERE id = $6`,
     [paidTotal, summary, user.id, done ? 'closed' : 'paid', done, current.id]
   );
-  if (current.table_id) {
+  if (current.table_id && !handedOver) {
     if (done) await releaseTable(client, current.table_id);
     else await client.query(`UPDATE tables SET status = 'paid' WHERE id = $1`, [current.table_id]);
   }
@@ -440,6 +445,87 @@ ws.on('order.close', async (user, payload) => {
       refs: { order_id: row.id, table_id: row.table_id || undefined },
     });
     return { order: await getOrder(client, user.restaurantId, row.id), tables: freed };
+  });
+  await publishOrder(order, { tables });
+  return order;
+});
+
+// order.handover { orderId } — "Close Table" by a waiter who does not take payment: every dish is
+// served, so the bill goes to the counter and the table is free at once for the next guests.
+// From then on the order is locked; only a manager can reopen it (order.reopen) while its table
+// is still free. A takeaway or delivery order goes to the counter the same way ("Close Order").
+ws.on('order.handover', async (user, payload) => {
+  if (!can(user, 'tables.close')) throw new AppError(403, 'forbidden', 'A manager or cashier closes this table');
+  const { order, tables } = await db.tx(async (client) => {
+    const row = await lockOwnOrder(client, user, payload.orderId);
+    const current = await getOrder(client, user.restaurantId, row.id);
+    checkBillable(current);
+    await client.query(
+      `UPDATE orders
+          SET handed_over_at = now(), handed_over_by = $1, at_counter = true,
+              bill_requested_at = COALESCE(bill_requested_at, now()), bill_requested_by = COALESCE(bill_requested_by, $1)
+        WHERE id = $2`,
+      [user.id, current.id]
+    );
+    const freed = current.table_id ? await releaseTable(client, current.table_id) : [];
+    await audit(client, {
+      restaurantId: user.restaurantId,
+      userId: user.id,
+      action: 'table.handover',
+      entity: 'order',
+      entityId: current.id,
+      new: { total: current.total },
+      refs: { order_id: current.id, table_id: current.table_id || undefined },
+    });
+    return { order: await getOrder(client, user.restaurantId, current.id), tables: freed };
+  });
+  await publishOrder(order, { tables });
+  return order;
+});
+
+// order.reopen { orderId } — a manager puts back a table its waiter closed: the order returns to its
+// table, unlocked, so the waiter can add dishes, and leaves the payment queue until the table is
+// closed again. Only while the bill is unpaid and the table is still free: no guests seated and
+// no newer order on it since the closing.
+ws.on('order.reopen', async (user, payload) => {
+  need(user, 'orders.manage');
+  const { order, tables } = await db.tx(async (client) => {
+    const { rows } = await client.query(
+      `SELECT * FROM orders WHERE id = $1 AND restaurant_id = $2 AND handed_over_at IS NOT NULL AND status NOT IN ${SETTLED_SQL} FOR UPDATE`,
+      [payload.orderId, user.restaurantId]
+    );
+    const row = rows[0];
+    if (!row) throw new AppError(409, 'not_closed', 'Only a closed table whose bill is not paid yet can be reopened');
+    const touched = [];
+    if (row.table_id) {
+      const table = (await client.query('SELECT * FROM tables WHERE id = $1 FOR UPDATE', [row.table_id])).rows[0];
+      if (!table || table.archived || !table.active) {
+        throw new AppError(409, 'table_gone', `${table?.label ?? 'This table'} is no longer in use. Put the extra dishes on a new order.`);
+      }
+      const newer = await client.query('SELECT 1 FROM orders WHERE table_id = $1 AND id <> $2 AND created_at > $3 LIMIT 1', [table.id, row.id, row.handed_over_at]);
+      if (newer.rows[0] || table.status !== 'free' || table.locked_by || table.joined_to_id) {
+        throw new AppError(409, 'table_taken', `${table.label} has new guests since it was closed. Put the extra dishes on a new order.`);
+      }
+      // The table carries on where it was when it was closed (served), held by the order's waiter.
+      await client.query('UPDATE tables SET status = $1, locked_by = $2, locked_at = now() WHERE id = $3', [TABLE_STATUS[row.status] || 'all_delivered', row.waiter_id, table.id]);
+      touched.push(table.id);
+    }
+    await client.query(
+      `UPDATE orders
+          SET handed_over_at = NULL, handed_over_by = NULL, at_counter = false, bill_requested_at = NULL, bill_requested_by = NULL
+        WHERE id = $1`,
+      [row.id]
+    );
+    await audit(client, {
+      restaurantId: user.restaurantId,
+      userId: user.id,
+      action: 'order.reopen',
+      entity: 'order',
+      entityId: row.id,
+      old: { closed_at: row.handed_over_at, closed_by: row.handed_over_by },
+      refs: { order_id: row.id, table_id: row.table_id || undefined },
+    });
+    return { order: await getOrder(client, user.restaurantId, row.id), tables: touched };
   });
   await publishOrder(order, { tables });
   return order;

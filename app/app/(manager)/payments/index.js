@@ -7,7 +7,7 @@ import { useLive } from '../../../src/store/live';
 import { api } from '../../../src/lib/api';
 import { useNow, minutesSince } from '../../../src/lib/useNow';
 import { money, orderLabel, plural, ago, tableName, duration } from '../../../src/lib/format';
-import { isOpen, itemCount, amountDue, allSettled, APPROVAL_TYPES, TYPE_ICON } from '../../../src/lib/orders';
+import { isOpen, itemCount, amountDue, allSettled, handedOver, APPROVAL_TYPES, TYPE_ICON } from '../../../src/lib/orders';
 import { approvalText } from '../../../src/lib/approvals';
 import { Screen } from '../../../src/components/Screen';
 import { AppHeader } from '../../../src/components/AppHeader';
@@ -111,7 +111,7 @@ export default function Payments() {
                         {order.type === 'dine_in' ? order.table_label : orderLabel(order)}
                       </Txt>
                       <Txt size={13} color="textSecondary" numberOfLines={2}>
-                        {[order.guests ? plural(order.guests, 'Guest') : null, order.area_name, order.waiter_name].filter(Boolean).join(' · ')}
+                        {[order.guests ? plural(order.guests, 'Guest') : null, order.area_name, order.waiter_name, handedOver(order) ? (order.type === 'dine_in' ? 'Table closed' : 'Closed') : null].filter(Boolean).join(' · ')}
                       </Txt>
                       <Txt size={12} color="textSecondary" tabular numberOfLines={1}>
                         #{order.number} · {plural(itemCount(order), 'item')} · waiting {duration(minutesSince(order.bill_requested_at ?? order.created_at, now))}

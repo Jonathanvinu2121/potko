@@ -8,7 +8,7 @@ import { Icon } from '../../src/components/Icon';
 import { useLive } from '../../src/store/live';
 import { on } from '../../src/lib/ws';
 import { toast } from '../../src/store/toast';
-import { isOpen, unavailableItems } from '../../src/lib/orders';
+import { isOpen, handedOver, unavailableItems } from '../../src/lib/orders';
 import { approvalShort } from '../../src/lib/approvals';
 
 // Waiter: a bottom bar with exactly three tabs.
@@ -18,7 +18,7 @@ export default function WaiterLayout() {
   const redirect = useRoleGuard('waiter');
   const readyCount = useLive((s) => s.readyCount);
   // An order with a dish the kitchen can't make needs the waiter: Replace or Remove.
-  const alerts = useLive((s) => s.orders.filter((o) => isOpen(o) && unavailableItems(o).length > 0).length);
+  const alerts = useLive((s) => s.orders.filter((o) => isOpen(o) && !handedOver(o) && unavailableItems(o).length > 0).length);
 
   // The kitchen can't make something: tell the waiter at once, whichever tab is open.
   useEffect(() => {

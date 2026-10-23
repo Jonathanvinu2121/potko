@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.3 — 2026-10-23
+
+The client's rule for waiters who do not take payment: they never see an amount, and when the guests
+are done they close the table; the manager makes the bill and takes the money. Checked in the app on
+this laptop: closing, the manager's bill, Reopen, the new-guests case, payment, and a paying waiter.
+
+### Waiters who do not take payment ("Close Table Only")
+- **They never see an amount**: no dish prices on the menu or orders, no items total, no bill. The
+  server no longer sends them any (orders, tables, menu, payments, the amounts on their own requests,
+  and the answers to their own actions). The "Sees prices" switch only matters for waiters who take payment.
+- A table's order offers only **Add Items** and, once every dish is served, **Close Table** (Close Order for
+  takeaway and delivery). Closing sends the bill to the manager's Payments, frees the table at once for the
+  next guests, and locks the order.
+- "No Access" waiters get Add Items only; a manager closes their tables.
+- Waiters who take payment: unchanged (Bill & Payment).
+
+### Manager: Reopen Table
+- A closed table's bill says who closed it and when, and **Reopen Table** takes the place of Edit Order. It
+  puts the order back on its table, unlocked, so the waiter can add dishes; its bill leaves Payments until
+  the table is closed again. Only while the bill is unpaid and the table is still free: no guests seated and
+  no newer order since the closing (otherwise the bill says why). After payment, extra dishes go on a new
+  order, so a paid bill never changes.
+- Payments marks these bills "Table closed". Paying one finishes its order at once and never touches the
+  table, which may already hold new guests.
+
+### Server
+- Migration 007: `orders.handed_over_at`, `handed_over_by`. New live actions `order.handover`, `order.reopen`.
+- A waiter's `bills.view` follows their payment permission, and without it `prices.view` is off as well.
+- Tests: `server/test/close-table.test.js` (7). All 92 server tests pass.
+
 ## 2.0.2 — 2026-10-22
 
 The two fixes of the developer brief: the menu import puts every dish in its category, and a table split

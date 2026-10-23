@@ -60,17 +60,24 @@ function notTaken(user, table) {
 }
 
 // The order a table holds right now (being served, or paid with the guests still seated), locked.
+// An order whose table its waiter closed (handed over to the counter) holds no table.
 async function openOrderOn(client, user, tableId) {
   const open = await client.query(
-    `SELECT id FROM orders WHERE table_id = $1 AND status NOT IN ${FINISHED_SQL} ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+    `SELECT id FROM orders WHERE table_id = $1 AND status NOT IN ${FINISHED_SQL} AND handed_over_at IS NULL ORDER BY id DESC LIMIT 1 FOR UPDATE`,
     [tableId]
   );
   return open.rows[0] ? getOrder(client, user.restaurantId, open.rows[0].id) : null;
 }
 
 // What the app shows for one bill before and after a split or merge.
-// Dish prices are taken out of an answer for someone who may not see them (bill totals stay).
-const forUser = (user, value) => (can(user, 'prices.view') ? value : JSON.parse(JSON.stringify(value, (key, v) => (key === 'amount' || key === 'unit_price' ? undefined : v))));
+// Dish prices are taken out of an answer for someone who may not see them; bill totals stay for a
+// waiter who takes payment, and go too for one who does not (bills.view off).
+const BILL_KEYS = ['total', 'subtotal', 'taxable', 'tax_total', 'tax_lines', 'service_charge', 'round_off', 'discount_amount', 'paid_total', 'due'];
+const forUser = (user, value) => {
+  if (can(user, 'prices.view') && can(user, 'bills.view')) return value;
+  const hide = new Set(['amount', 'unit_price', ...(can(user, 'bills.view') ? [] : BILL_KEYS)]);
+  return JSON.parse(JSON.stringify(value, (key, v) => (hide.has(key) ? undefined : v)));
+};
 
 const summary = (order) => ({
   order_id: order.id,
@@ -319,7 +326,7 @@ async function splitAgain(client, user, parent, wanted, seats) {
   });
 
   // A part with people at it keeps at least as many seats as it has guests.
-  const seated = (await client.query(`SELECT table_id, guests FROM orders WHERE table_id = ANY($1::int[]) AND status NOT IN ${FINISHED_SQL}`, [children.map((c) => c.id)])).rows;
+  const seated = (await client.query(`SELECT table_id, guests FROM orders WHERE table_id = ANY($1::int[]) AND status NOT IN ${FINISHED_SQL} AND handed_over_at IS NULL`, [children.map((c) => c.id)])).rows;
   for (const child of children) {
     const order = seated.find((o) => o.table_id === child.id);
     if (!order || !kept.has(child.id)) continue;
@@ -503,7 +510,7 @@ ws.on('table.merge', async (user, payload) => {
         const part = left.rows[0];
         await client.query(`UPDATE tables SET archived = true, status = 'free', locked_by = NULL, locked_at = NULL WHERE id = $1`, [part.id]);
         await client.query('UPDATE tables SET status = $1, locked_by = $2, locked_at = $3 WHERE id = $4', [part.status, part.locked_by, part.locked_at, parentId]);
-        await client.query(`UPDATE orders SET table_id = $1 WHERE table_id = $2 AND status NOT IN ${FINISHED_SQL}`, [parentId, part.id]);
+        await client.query(`UPDATE orders SET table_id = $1 WHERE table_id = $2 AND status NOT IN ${FINISHED_SQL} AND handed_over_at IS NULL`, [parentId, part.id]);
         tableIds.push(parentId);
         keep = { ...keep, id: parentId };
       }
@@ -596,6 +603,7 @@ ws.on('table.transfer', async (user, payload) => {
     );
     const order = found.rows[0];
     if (!order || !order.table_id) throw fail('no_order', 'This table has no order to move', 404);
+    if (order.handed_over_at) throw fail('order_closed', 'This table was closed. A manager can reopen it first.', 409);
     if (order.waiter_id !== user.id && !can(user, 'orders.manage')) throw fail('not_your_order', 'This table belongs to another waiter', 403);
 
     const from = (await client.query('SELECT * FROM tables WHERE id = $1 FOR UPDATE', [order.table_id])).rows[0];

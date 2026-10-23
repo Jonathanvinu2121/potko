@@ -6,6 +6,7 @@ import { useLive } from '../../../src/store/live';
 import { useMenu } from '../../../src/store/menu';
 import { useDraft } from '../../../src/store/draft';
 import { useConnection, send } from '../../../src/lib/ws';
+import { useCan } from '../../../src/store/auth';
 import { toast } from '../../../src/store/toast';
 import { money, orderLabel, plural } from '../../../src/lib/format';
 import { ITEM_STATUS, TYPE_LABEL, TYPE_ICON, allSettled, cancelRequested, isOpen, itemsWith, onFloor } from '../../../src/lib/orders';
@@ -31,10 +32,14 @@ const CANCEL_REASONS = ['Customer changed mind', 'Wrong item ordered', 'Waited t
 //   Preparing         locked; cancelling needs the manager
 //   Ready             deliver
 //   Unavailable       Replace item or Remove
+// When every dish is served: a waiter who takes payment opens the bill; one who does not ("Close
+// table only") closes the table, which sends the bill to the counter and frees the table. They
+// never see an amount. A "No access" waiter leaves the table to a manager.
 export default function OrderStatus() {
   const t = useTheme();
   const prices = usePrices();
   const seesBills = useSeesBills();
+  const canClose = useCan('tables.close');
   const router = useRouter();
   const id = Number(useLocalSearchParams().id);
   const order = useLive((s) => s.orders.find((o) => o.id === id));
@@ -46,6 +51,7 @@ export default function OrderStatus() {
   const [removing, setRemoving] = useState(null); // dish waiting for "are you sure?"
   const [cancelling, setCancelling] = useState(null); // dish whose cancel reason is being asked
   const [closing, setClosing] = useState(false);
+  const [handing, setHanding] = useState(false); // "Close Table?" for a waiter who does not take payment
   const [showDelivered, setShowDelivered] = useState(false);
 
   // Editing a dish needs the menu (its sizes and chips).
@@ -133,14 +139,21 @@ export default function OrderStatus() {
   };
 
   // The meal is over: the table shows "Bill requested", joins the payment queue, and the bill opens.
-  // (Someone who may not see bills only asks for it: the counter takes it from there.)
   const askForBill = () =>
     run('close', 'bill.request', { orderId: order.id }, () => {
       setClosing(false);
-      if (seesBills) router.push(`/given-orders/bill/${order.id}`);
-      else toast('Bill sent to the counter', { icon: 'receipt-text-outline', tone: 'success' });
+      router.push(`/given-orders/bill/${order.id}`);
     }).then(() => setClosing(false));
-  const openBill = () => (order.bill_requested_at ? (seesBills ? router.push(`/given-orders/bill/${order.id}`) : toast('The bill is with the counter', { icon: 'receipt-text-outline' })) : setClosing(true));
+  const openBill = () => (order.bill_requested_at ? router.push(`/given-orders/bill/${order.id}`) : setClosing(true));
+
+  // A waiter who does not take payment closes the table: the bill goes to the counter, the table is
+  // free for the next guests, and the order is locked (a manager can reopen it).
+  const handOver = () =>
+    run('close', 'order.handover', { orderId: order.id }, () => {
+      setHanding(false);
+      toast(`${dineIn ? orderLabel(order) : 'Order'} closed. The bill is with the manager.`, { icon: 'receipt-text-outline', tone: 'success', duration: 4000 });
+      router.back();
+    }).then(() => setHanding(false));
 
   // The guests have left a paid table: free it.
   const closePaidTable = () =>
@@ -244,16 +257,18 @@ export default function OrderStatus() {
           ) : null}
           {paidBill ? (
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Button title="View Bill" icon="receipt-text-outline" variant="secondary" disabled={!!busy} onPress={() => router.push(`/given-orders/bill/${order.id}`)} style={{ flex: 1 }} />
-              <Button title={dineIn ? 'Close Table' : 'Complete Order'} icon="check-circle-outline" loading={busy === 'close'} disabled={!online} onPress={closePaidTable} style={{ flex: 1.2 }} />
+              {seesBills ? <Button title="View Bill" icon="receipt-text-outline" variant="secondary" disabled={!!busy} onPress={() => router.push(`/given-orders/bill/${order.id}`)} style={{ flex: 1 }} /> : null}
+              {canClose ? <Button title={dineIn ? 'Close Table' : 'Complete Order'} icon="check-circle-outline" loading={busy === 'close'} disabled={!online} onPress={closePaidTable} style={{ flex: 1.2 }} /> : null}
             </View>
           ) : (
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Button title="Add Items" icon="plus-circle-outline" variant="secondary" disabled={!!busy || !online} onPress={() => addMore()} style={{ flex: 1 }} />
               {ready.length > 0 ? (
                 <Button title={`Deliver ready (${ready.length})`} loading={busy === 'deliver'} disabled={!online} onPress={deliver} style={{ flex: 1.2 }} />
-              ) : settled ? (
-                <Button title={seesBills ? 'Bill & Payment' : order.bill_requested_at ? 'Bill at counter' : 'Send bill to counter'} icon="receipt-text-outline" disabled={!!busy || !online} onPress={openBill} style={{ flex: 1.2 }} />
+              ) : settled && seesBills ? (
+                <Button title="Bill & Payment" icon="receipt-text-outline" disabled={!!busy || !online} onPress={openBill} style={{ flex: 1.2 }} />
+              ) : settled && canClose ? (
+                <Button title={dineIn ? 'Close Table' : 'Close Order'} icon="check-circle-outline" disabled={!!busy || !online} onPress={() => setHanding(true)} style={{ flex: 1.2 }} />
               ) : null}
             </View>
           )}
@@ -279,7 +294,13 @@ export default function OrderStatus() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: t.radius.control, backgroundColor: t.c.successTint }}>
             <Icon name={paidBill ? 'cash-check' : 'check-all'} color="successText" />
             <Txt weight={700} color="successText" style={{ flex: 1 }}>
-              {paidBill ? `${prices.withPrice('Bill paid', order.total)}. Close the table when the guests leave${dineIn ? ', or move them from the Tables screen' : ''}.` : order.bill_requested_at ? 'All items delivered · bill requested' : 'All items delivered'}
+              {paidBill
+                ? `${prices.withPrice('Bill paid', order.total)}. ${canClose ? `Close the table when the guests leave${dineIn ? ', or move them from the Tables screen' : ''}.` : 'A manager closes the table.'}`
+                : order.bill_requested_at
+                  ? 'All items delivered · bill requested'
+                  : seesBills || canClose
+                    ? 'All items delivered'
+                    : 'All items delivered · a manager closes the table'}
             </Txt>
           </View>
         ) : null}
@@ -338,6 +359,15 @@ export default function OrderStatus() {
         busy={busy === 'close'}
         onConfirm={askForBill}
         onClose={() => setClosing(false)}
+      />
+      <ConfirmSheet
+        visible={handing}
+        title={dineIn ? `Close ${orderLabel(order)}?` : `Close order #${order.number}?`}
+        text={`The bill goes to the manager${dineIn ? ' and the table is free for the next guests' : ''}. You cannot add items after this; only a manager can reopen it.`}
+        confirmLabel={dineIn ? 'Close Table' : 'Close Order'}
+        busy={busy === 'close'}
+        onConfirm={handOver}
+        onClose={() => setHanding(false)}
       />
       <ReasonSheet
         visible={!!cancelling}

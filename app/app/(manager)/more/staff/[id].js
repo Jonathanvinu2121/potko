@@ -199,7 +199,7 @@ export default function StaffProfile() {
                 </>
               ) : null}
               {person.role === 'waiter' || person.role === 'cashier' ? (
-                <ActionRow icon="tag-outline" title="Price Visibility" subtitle={person.permissions['prices.view'] === false ? 'Cannot see prices' : 'Can see prices'} disabled={!editable} onPress={() => router.push(`/more/staff/edit?id=${id}&step=prices`)} />
+                <ActionRow icon="tag-outline" title="Price Visibility" subtitle={person.role === 'waiter' && person.permissions['bills.view'] === false ? 'Never sees prices or bills' : person.permissions['prices.view'] === false ? 'Cannot see prices' : 'Can see prices'} disabled={!editable} onPress={() => router.push(`/more/staff/edit?id=${id}&step=prices`)} />
               ) : null}
               {person.role === 'chef' ? (
                 <ActionRow icon="monitor-dashboard" title="Terminal Access" subtitle={access.terminals.map((k) => k.name).join(', ') || 'None yet'} disabled={!editable} onPress={() => router.push(`/more/staff/edit?id=${id}&step=terminals`)} />

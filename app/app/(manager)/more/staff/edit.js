@@ -122,8 +122,8 @@ const ROLE_STEPS = {
 const STEP_NAMES = { role: 'Role', basic: 'Details', areas: 'Dining Areas', tables: 'Tables', payment: 'Payment', prices: 'Prices', terminals: 'Terminals', business: 'Access', summary: 'Summary' };
 const PAYMENT = {
   take: { title: 'Can Take Payment', text: 'The waiter can generate the bill and take payments directly' },
-  close: { title: 'Close Table Only', text: 'The waiter can close the table; the payment is handled by a manager or cashier' },
-  none: { title: 'No Access', text: 'The waiter cannot close the table or take payments' },
+  close: { title: 'Close Table Only', text: 'The waiter closes the table when the guests are done; a manager or cashier makes the bill and takes the payment. They never see prices or the bill' },
+  none: { title: 'No Access', text: 'The waiter cannot close the table or take payments, and never sees prices or the bill' },
 };
 
 // More > Staff > Add or Edit, in the steps of the "finals" design, with the step names in a row
@@ -424,10 +424,15 @@ export default function StaffForm() {
         ) : null}
 
         {current === 'prices' ? (
-          <>
-            <RadioCard title="Can See Prices" text="Prices show on the menu and on orders" selected={form.prices} onPress={() => set({ prices: true })} />
-            <RadioCard title="Cannot See Prices" text="The menu and orders show no dish prices. The bill amount still shows when they take a payment." selected={!form.prices} onPress={() => set({ prices: false })} />
-          </>
+          form.role === 'waiter' && form.payment !== 'take' ? (
+            // A waiter who does not take payment never sees an amount: there is nothing to choose.
+            <Notice icon="eye-off-outline" title="Prices stay hidden" text={`${PAYMENT[form.payment].title}: this waiter never sees dish prices or the bill. Choose Can Take Payment in the Payment step to show them.`} />
+          ) : (
+            <>
+              <RadioCard title="Can See Prices" text="Prices show on the menu and on orders" selected={form.prices} onPress={() => set({ prices: true })} />
+              <RadioCard title="Cannot See Prices" text="The menu and orders show no dish prices. The bill amount still shows when they take a payment." selected={!form.prices} onPress={() => set({ prices: false })} />
+            </>
+          )
         ) : null}
 
         {current === 'terminals' ? (
@@ -482,7 +487,7 @@ export default function StaffForm() {
                   <Line label="Payment Permission" value={PAYMENT[form.payment].title} muted />
                 </>
               ) : null}
-              {form.role === 'waiter' || form.role === 'cashier' ? <Line label="Prices" value={form.prices ? 'Can see prices' : 'Cannot see prices'} muted /> : null}
+              {form.role === 'waiter' || form.role === 'cashier' ? <Line label="Prices" value={form.role === 'waiter' && form.payment !== 'take' ? 'Never sees prices or bills' : form.prices ? 'Can see prices' : 'Cannot see prices'} muted /> : null}
               {form.role === 'waiter' || form.role === 'cashier' ? <Line label="Discount without approval" value={form.limit ? `Up to ${form.limit}%` : 'None'} muted /> : null}
               {form.role === 'chef' ? <Line label="Terminals" value={terminals.filter((k) => form.terminals.includes(k.id)).map((k) => k.name).join(', ')} muted /> : null}
               {form.role === 'manager' ? (

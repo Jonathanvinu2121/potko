@@ -1,6 +1,7 @@
 // Shared table query. A table travels with its floor and dining area, the name of the waiter
 // holding it, the tables joined to it for one party (T3 + T4) and, if it has an order that is not
 // finished, that order's number, start time and amount (for the timer and the amount on the card).
+// An order whose table was closed by its waiter (handed over to the counter) no longer holds it.
 const TABLE_SELECT = `
   SELECT t.*, u.name AS locked_by_name, da.name AS area_name, da.floor_id, fl.name AS floor_name,
          pt.label AS parent_label, pt.seats AS parent_seats, jt.label AS joined_to_label,
@@ -22,7 +23,7 @@ const TABLE_SELECT = `
              (SELECT COALESCE(sum(i.qty), 0)::int FROM order_items i
                WHERE i.order_id = o.id AND i.status NOT IN ('unavailable', 'removed', 'cancelled')) AS item_count
         FROM orders o JOIN users w ON w.id = o.waiter_id
-       WHERE o.table_id = t.id AND o.status NOT IN ('closed', 'cancelled', 'merged')
+       WHERE o.table_id = t.id AND o.status NOT IN ('closed', 'cancelled', 'merged') AND o.handed_over_at IS NULL
        ORDER BY o.id DESC
        LIMIT 1
     ) ao ON true`;

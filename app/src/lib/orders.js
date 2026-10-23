@@ -6,8 +6,11 @@ export const DEAD = ['unavailable', 'removed', 'cancelled'];
 
 // Still being served or billed: dishes can be added and the bill is not settled.
 export const isOpen = (order) => !['paid', 'closed', 'cancelled', 'merged'].includes(order.status);
+// Its waiter closed the table: the bill is at the counter, the table is free, and nothing more can
+// be added unless a manager reopens it.
+export const handedOver = (order) => !!order.handed_over_at;
 // Still holding a table (a paid table is occupied until it is closed).
-export const onFloor = (order) => !['closed', 'cancelled', 'merged'].includes(order.status);
+export const onFloor = (order) => !['closed', 'cancelled', 'merged'].includes(order.status) && !handedOver(order);
 
 // Label, colour and icon for each dish status. Status is never shown by colour alone.
 export const ITEM_STATUS = {

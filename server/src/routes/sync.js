@@ -4,7 +4,7 @@ const { ORDER_SELECT } = require('../orders');
 const { listTables } = require('../tables');
 const { APPROVAL_SELECT } = require('../approvals');
 const { can } = require('../permissions');
-const { tableFor, areaFor, orderFor } = require('../scope');
+const { tableFor, areaFor, orderFor, approvalFor } = require('../scope');
 const { listAreas, listFloors, listTerminals } = require('./floor');
 
 const router = express.Router();
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
     tables: (await listTables(db, restaurantId)).map((t) => tableFor(me, t)).filter(Boolean),
     terminals: isChef ? terminals.filter((k) => (me.terminals || []).includes(k.id)) : terminals,
     orders: orders.rows.map((o) => orderFor(me, o)).filter(Boolean),
-    approvals: approvals.rows,
+    approvals: approvals.rows.map((a) => approvalFor(me, a)),
     readyCount,
     serverTime: new Date().toISOString(),
   });

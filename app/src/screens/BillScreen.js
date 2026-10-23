@@ -9,7 +9,8 @@ import { toast } from '../store/toast';
 import { useNow, minutesSince } from '../lib/useNow';
 import { money, orderLabel, clock, duration, plural, tableName } from '../lib/format';
 import { printReceipt, shareReceipt } from '../lib/receipt';
-import { isOpen, allSettled, amountDue, goodPayments, methodLabel, pendingDiscount, liveItems, METHODS, TYPE_LABEL } from '../lib/orders';
+import { isOpen, allSettled, amountDue, goodPayments, methodLabel, pendingDiscount, liveItems, handedOver, METHODS, TYPE_LABEL } from '../lib/orders';
+import { useSeesBills } from '../lib/prices';
 import { Screen } from '../components/Screen';
 import { AppHeader } from '../components/AppHeader';
 import { Txt } from '../components/Txt';
@@ -25,6 +26,7 @@ import { Line, Tabs } from '../components/Lists';
 import { Success, Notice } from '../components/Feedback';
 import { OrderLines } from '../components/OrderLines';
 import { BillSummary } from '../components/BillSummary';
+import { ConfirmSheet } from '../components/ConfirmSheet';
 
 const num = (text) => Number(String(text).replace(/[^0-9.]/g, '')) || 0;
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -169,9 +171,22 @@ export function BillScreen({ orderId, paths }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(null);
   const [last, setLast] = useState(null); // the payment that settled the bill
+  const seesBills = useSeesBills();
+  const reopens = useCan('orders.manage'); // a manager's power: put back a table its waiter closed
+  const table = useLive((s) => s.tables.find((x) => x.id === order?.table_id));
+  const [reopening, setReopening] = useState(false);
 
   const methods = restaurant?.settings?.payment_methods ?? ['cash', 'upi', 'card'];
   const fail = (err) => toast(err.message, { icon: 'alert-circle-outline', tone: 'error', duration: 5000 });
+
+  // A waiter who does not take payment never sees a bill: they close the table and the counter bills it.
+  if (!seesBills) {
+    return (
+      <Screen scroll={false} header={<AppHeader title="Bill" back />}>
+        <EmptyState icon="receipt-text-outline" title="The bill is with the manager" text="Only staff who take payments see bills." />
+      </Screen>
+    );
+  }
 
   if (!order) {
     return (
@@ -182,6 +197,11 @@ export function BillScreen({ orderId, paths }) {
   }
 
   const name = orderLabel(order);
+  const dineIn = order.type === 'dine_in';
+  // Its waiter closed the table: the bill is here, the table is free, and nothing more can be added
+  // unless a manager reopens it, which works only while nobody new is at the table.
+  const closed = handedOver(order);
+  const taken = closed && dineIn && !!table && (table.status !== 'free' || !!table.locked_by);
   const due = amountDue(order);
   const paid = goodPayments(order);
   const waitingDiscount = pendingDiscount(order);
@@ -418,10 +438,27 @@ export function BillScreen({ orderId, paths }) {
                 {clock(order.created_at)} · {duration(minutesSince(order.created_at, now))} · {order.waiter_name}
               </Txt>
             </View>
-            <Button title="Edit Order" icon="pencil-outline" variant="link" onPress={() => router.push(paths.order(order.id))} />
+            {!closed ? (
+              <Button title="Edit Order" icon="pencil-outline" variant="link" onPress={() => router.push(paths.order(order.id))} />
+            ) : reopens ? (
+              <Button title={dineIn ? 'Reopen Table' : 'Reopen Order'} icon="restore" variant="link" disabled={taken} onPress={() => setReopening(true)} />
+            ) : null}
           </View>
           <OrderLines order={{ ...order, items: liveItems(order) }} />
         </Card>
+
+        {closed ? (
+          <Notice
+            tone={taken ? 'warning' : 'primary'}
+            icon={taken ? 'account-group-outline' : 'check-circle-outline'}
+            title={`${order.waiter_name} closed ${dineIn ? name : 'this order'} at ${clock(order.handed_over_at)}`}
+            text={
+              taken
+                ? `${name} has new guests now, so this order cannot be reopened. Put extra dishes on a new order.`
+                : `${dineIn ? 'The table is free for new guests. ' : ''}Take the payment here${reopens ? ', or reopen it if the guests want more' : ''}.`
+            }
+          />
+        ) : null}
 
         <Card style={{ gap: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -459,6 +496,22 @@ export function BillScreen({ orderId, paths }) {
       </View>
 
       <DiscountSheet visible={discounting} order={order} onClose={() => setDiscounting(false)} />
+      <ConfirmSheet
+        visible={reopening}
+        title={`Reopen ${name}?`}
+        text={`Order #${order.number} goes back${dineIn ? ` on ${name}` : ''} to ${order.waiter_name}, who can add dishes again. Its bill leaves Payments until it is closed again.`}
+        confirmLabel={dineIn ? 'Reopen Table' : 'Reopen Order'}
+        busy={busy === 'reopen'}
+        onConfirm={() =>
+          act('reopen', async () => {
+            await send('order.reopen', { orderId: order.id });
+            setReopening(false);
+            toast(`${name} reopened for ${order.waiter_name}`, { tone: 'success' });
+            leave();
+          }).then(() => setReopening(false))
+        }
+        onClose={() => setReopening(false)}
+      />
     </Screen>
   );
 }
