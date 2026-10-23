@@ -5,8 +5,8 @@ what has been built and how, where everything lives, what is weak or missing, ho
 and which decisions must be kept. Read it first. Then use [`README.md`](README.md) for the detailed rules and the
 commands to run, and [`CHANGELOG.md`](CHANGELOG.md) for what changed in each version.
 
-No password, PIN, connection string, setup code or private link is written here. The repository is
-**public**, so keep it that way.
+No password, PIN, connection string, setup code or private link is written here. The repository was made
+**private** on 23 October 2026; keep secrets out of it anyway.
 
 ---
 
@@ -30,6 +30,7 @@ No password, PIN, connection string, setup code or private link is written here.
 16. [Engineering conventions](#16-engineering-conventions)
 17. [Open items and pending decisions](#17-open-items-and-pending-decisions)
 18. [Glossary](#18-glossary)
+19. [Plan: one app for many restaurants (agreed direction, 23 Oct 2026)](#19-plan-one-app-for-many-restaurants-agreed-direction-23-oct-2026)
 
 ---
 
@@ -685,7 +686,8 @@ These came from the owner and the client and override the original specification
 | Item | Owner | State |
 |---|---|---|
 | Hosting plan (free with keep-awake, or Render Starter) | Owner | Free plan with keep-awake (option B) chosen on 22 Oct; Starter recommended before real dependence |
-| Repository visibility | Owner | Public today |
+| Repository visibility | Owner | Made private on 23 Oct 2026 |
+| One app for many restaurants (section 19) | Owner decides, developer builds | Direction agreed, not started |
 | Release keystore | Developer | Not created; APKs use the debug key |
 | Backups and monitoring | Developer | None yet |
 | Support contact in the client guide | Owner | Empty |
@@ -713,3 +715,117 @@ These came from the owner and the client and override the original specification
 | Approval PIN | A manager's or admin's 4-digit code for approvals |
 | Business day | The restaurant's day for reports, starting at `day_start` |
 | Keep-awake | The free-plan workaround that keeps the server from sleeping during opening hours |
+| Multi-tenant | One server and one database serving many restaurants, each seeing only its own data (section 19) |
+| Restaurant code | Planned (2.1): a short code per restaurant that staff enter once at sign-in |
+
+---
+
+## 19. Plan: one app for many restaurants (agreed direction, 23 Oct 2026)
+
+Recorded from the owner's discussion on 23 October 2026. Nothing in this section is built yet.
+
+### 19.1 The goal, in the owner's words
+"One app, multiple users", like any store app (Instagram, Clash of Clans): one POTKO app, one server, and **any
+restaurant can sign itself up** and set up its own menu, tables, staff and rules, never seeing another restaurant.
+
+### 19.2 Options considered
+
+| | A. One shared server (multi-tenant) | B. A server and database per restaurant | C. Mix |
+|---|---|---|---|
+| Hosting cost | About $7–25 a month in total | About $7 a month per restaurant, plus a database each | Shared, plus a few separate |
+| Updates | Once for everyone | Once per restaurant | Mostly once |
+| One outage | Stops every restaurant | Stops one | Mostly everyone |
+| Data separation | By code (and row-level security, planned) | Complete | Complete for the separate ones |
+| Self sign-up like a store app | Yes | No (each one is set up by hand) | Yes |
+
+**Chosen direction: A.** B only later, for a chain that pays for its own isolated server (that is C). The same APK
+works with every option: its first screen has a Server setting.
+
+### 19.3 Why A fits what is already built
+- Every table carries `restaurant_id`; every query is filtered by the signed-in person's restaurant; live updates
+  (`toEach(restaurantId, …)`) reach only that restaurant's phones.
+- Everything a restaurant sets up is already per restaurant: menu and import, dining areas and tables, kitchens and
+  chefs, staff and permissions, taxes and service charge, payment levels, approval PIN, reports, audit log.
+- Capacity is not the limit: about 50 complete orders a minute measured on the free plan's 0.1 CPU (section 12),
+  while one busy restaurant peaks at one or two new orders a minute.
+
+### 19.4 What stops A today (the limitations)
+
+| Limitation | Where |
+|---|---|
+| Staff IDs are unique on the whole server: two restaurants cannot both have `W-101` | `users_login_id_key` on `lower(login_id)`; sign-in looks a person up by ID alone (`server/src/routes/auth.js`) |
+| The app's set-up creates only the first restaurant; more need a developer to run `npm run restaurant:add` | `POST /auth/setup` refuses once a restaurant exists |
+| No owner panel to see, suspend or count restaurants | — |
+| Separation is enforced by code only; one query without the restaurant filter could leak data | No row-level security in PostgreSQL |
+| Backups and restore cover the whole database; no per-restaurant export or account deletion | — |
+| Free plan: the server sleeps, 0.1 CPU, keep-awake has one set of opening hours for everyone, no backups | Section 12, 8.13 |
+| APKs are sent by hand and signed with the debug key; not on the Play Store | Section 9.6 |
+
+### 19.5 The plan
+
+**Version 2.1: many restaurants on the current server**
+1. **Create your restaurant** in the app for anyone: owner's name, phone or email verified with a one-time code,
+   restaurant name, password and PIN. It replaces the single `SETUP_CODE` set-up; the existing restaurant stays as it is.
+   Sign-ups are rate-limited.
+2. **Restaurant code at staff sign-in** (for example `POTKO-4821`, shown to the admin in Settings). Staff type it
+   once; the phone remembers it. The unique index becomes `(restaurant_id, lower(login_id))`. The current client gets
+   a code in a migration; their Staff IDs keep working.
+3. **Platform owner panel** for the POTKO owner (a separate role above restaurant admins): list of restaurants,
+   sign-up date, last activity, order counts, suspend and resume.
+4. **Row-level security** in PostgreSQL: each request sets the current restaurant, and the database refuses rows of
+   any other, as a safety net under the existing filters. Tests prove that restaurant A cannot read restaurant B.
+
+**Before announcing it publicly**
+5. Per-restaurant export (Excel/JSON) and account deletion (the Play Store requires deletion).
+6. Paid server, daily backups with one tested restore, uptime monitoring and error tracking.
+7. Play Store release: private signing key, privacy policy, store listing; over-the-air updates for JavaScript changes.
+
+**Later:** subscriptions and billing (trial, plans), usage limits per plan, pictures in object storage, more than one
+server process (section 12), languages, printers, offline mode.
+
+### 19.6 Is a paid server needed?
+- **To build and test 2.1: no.** It is built and tested on the laptop and the free demo.
+- **Before real restaurants depend on it: yes.** Render Starter (about $7 a month, 0.5 CPU, never sleeps) is the
+  minimum; then keep-awake is switched off. Neon's free database (1 GB, about 190,000 orders) is enough at first;
+  move to its paid plan for longer restore history and an always-on database when several restaurants run daily.
+
+### 19.7 Who does what
+
+| Who | What |
+|---|---|
+| Owner | Choose phone OTP (needs an SMS provider and DLT registration in India, paid per message) or email OTP (free) for owner verification; pay for Render Starter; create the Google Play developer account; write or approve the privacy policy and support contact; decide pricing for restaurants; say "go" for 2.1 |
+| Current client | Install 2.0.3 on every phone; keep using Staff IDs as today; after 2.1, staff enter their restaurant code once; have an accountant check the GST bill |
+| Developer | Build 2.1 (items 1–4) server first with tests; migrate the current client without disturbing their data; then items 5–7 |
+| Pending from 23 Oct | Push commit `31c64d7` (the auto-mode check blocked the push; the owner runs `git push origin main`); the emulator install-over test of the 2.0.3 APK was paused by the owner |
+
+### 19.8 Every limitation and its solution
+
+Effort is a rough estimate for one developer working with Claude Code.
+
+| # | Limitation | Solution | Needs from owner / client | Effort |
+|---|---|---|---|---|
+| 1 | Free server sleeps, 0.1 CPU | Render Starter; switch keep-awake off; disable the wake workflow | Owner pays about $7 a month | 1 hour |
+| 2 | No backups | Neon's restore history on its paid plan, plus a nightly `pg_dump` to private storage; test one restore | Owner approves the cost and the storage | 1–2 days |
+| 3 | No monitoring | Uptime check with alerts (for example UptimeRobot) and error tracking (Sentry); both have free tiers | Owner's email or phone for alerts | 1 day |
+| 4 | APK signed with the shared debug key | A private release keystore, stored safely with a backup. **Changing the key means every phone uninstalls POTKO once** (Android refuses an update with a different signature), so do it together with the Play Store move | Owner keeps the key backup | Half a day |
+| 5 | APKs installed by hand | Play Store (internal testing first, then public); over-the-air updates (EAS Update) for JavaScript-only changes | Owner: Google Play developer account (one-time fee), privacy policy, store texts | 2–4 days |
+| 6 | Old app versions keep running after a server update (2.0.3's ₹0 bill on an old APK) | The server states a minimum app version; an older app shows "Please update" instead of wrong screens | — | 1 day |
+| 7 | Not proven on a real full day | A supervised pilot day at the client with the developer on call, then fix what it finds | Client picks a day | 1 day + fixes |
+| 8 | No offline ordering | Queue actions on the phone while offline and send them when back; the server already ignores repeats (action ids). Show "Offline, N waiting" | — | 2–3 weeks |
+| 9 | No printing | Thermal printers (ESC/POS) over Wi-Fi or Bluetooth: one per kitchen for tickets, one for bills | Client names the printer models | 1–2 weeks |
+| 10 | No payment gateway or UPI QR | Razorpay (or similar) dynamic UPI QR on the bill; its webhook marks the bill paid by itself | Restaurant's Razorpay account with KYC | 1–2 weeks |
+| 11 | No Swiggy / Zomato | Their partner integrations need approval; a paid aggregator middleware (for example UrbanPiper) is the usual route | Owner decides if it is worth the fees | 3–4 weeks |
+| 12 | No push notifications | Firebase Cloud Messaging with `expo-notifications`: ready dishes, bill requests, approvals | Owner: Firebase project | 1 week |
+| 13 | English only | Move screen texts to translation files; add Hindi and Punjabi | Someone checks the translations | 1–2 weeks |
+| 14 | No iOS app | The same code builds for iOS (EAS cloud build, no Mac needed) | Owner: Apple developer account (yearly fee) | 1–2 weeks |
+| 15 | Reopen does not cover joined tables or split parts (8.7) | Extend `order.reopen` to rebuild the join or split, with tests | — | 2–3 days |
+| 16 | Staff IDs unique on the whole server | Restaurant code at staff sign-in (19.5 item 2) | — | Part of 2.1 |
+| 17 | Only the first restaurant can sign up | Create your restaurant with OTP (19.5 item 1) | Owner: phone or email OTP choice | Part of 2.1 |
+| 18 | No owner panel | Platform owner role and panel (19.5 item 3) | — | Part of 2.1 |
+| 19 | Separation by code only | PostgreSQL row-level security (19.5 item 4) | — | Part of 2.1 |
+| 20 | No per-restaurant export or deletion | Export file and account deletion (19.5 item 5) | — | 3–4 days |
+| 21 | One opening-hours window for keep-awake | Goes away with item 1 (a paid server never sleeps) | — | — |
+| 22 | One server process only | Redis for the live updates and the in-memory state (section 12) | Owner pays for Redis when needed | 1–2 weeks, only at tens of restaurants |
+
+**Suggested order:** 1–3 and 6 now (cheap, protect the current client); 2.1 (16–19); then 4–5 together with 20 for
+the public launch; then 7, 9 and 10, which restaurants feel most; then the rest by demand.
