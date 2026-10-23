@@ -31,6 +31,7 @@ No password, PIN, connection string, setup code or private link is written here.
 17. [Open items and pending decisions](#17-open-items-and-pending-decisions)
 18. [Glossary](#18-glossary)
 19. [Plan: one app for many restaurants (agreed direction, 23 Oct 2026)](#19-plan-one-app-for-many-restaurants-agreed-direction-23-oct-2026)
+20. [Launch scope and timeline (agreed 24 Oct 2026)](#20-launch-scope-and-timeline-agreed-24-oct-2026)
 
 ---
 
@@ -829,3 +830,70 @@ Effort is a rough estimate for one developer working with Claude Code.
 
 **Suggested order:** 1–3 and 6 now (cheap, protect the current client); 2.1 (16–19); then 4–5 together with 20 for
 the public launch; then 7, 9 and 10, which restaurants feel most; then the rest by demand.
+
+---
+
+## 20. Launch scope and timeline (agreed 24 Oct 2026)
+
+Recorded from the owner's answers on 23–24 October 2026. Nothing in this section is built yet.
+
+### 20.1 The target
+- **Customers first:** full-service restaurants and cafés.
+- **Public launch:** in about three months, around **22 January 2027**.
+- **Pilot:** the current client uses POTKO **free, in exchange for a testimonial**, starting now.
+
+Everything in 19.8 adds up to roughly 5–6 months of work, so the launch takes about half of it: what restaurants and
+cafés cannot work without.
+
+### 20.2 In scope for the launch
+
+| Item | Why | 19.8 # |
+|---|---|---|
+| Paid server, backups, monitoring, minimum app version ("Please update") | Paying customers cannot lose orders or data | 1, 2, 3, 6 |
+| **2.1: many restaurants** (Create your restaurant with OTP, restaurant code, owner panel, row-level security) | Without it POTKO cannot be sold beyond one client | 16–19 |
+| Per-restaurant export and account deletion | Required by the Play Store; owners ask for it | 20 |
+| **Printing**: kitchen tickets per kitchen and bills on thermal printers | Indian restaurants expect a printed KOT and bill; the most likely objection in a demo | 9 |
+| **UPI QR on the bill**: first the restaurant's own static QR with a "Paid" tap; later Razorpay's dynamic QR that confirms by itself | Most café payments are UPI | 10 |
+| **Café quick mode**: counter order, pay first, token number | Cafés do not seat tables; takeaway orders exist but the counter flow must be fast | new |
+| Play Store release with a private signing key and a privacy policy | How restaurants install it | 4, 5 |
+| Pilot day at the client, then fixes | Proof, and the testimonial | 7 |
+
+**Stretch, if time allows:** basic offline ordering (queue and resend), because restaurant Wi-Fi drops (19.8 #8).
+
+**Out of the launch:** Swiggy / Zomato, iOS, Hindi and Punjabi, push notifications, Redis and more server processes,
+reopen onto joined or split tables.
+
+### 20.3 Timeline (13 weeks)
+
+| Weeks | Until about | Work |
+|---|---|---|
+| 1–2 | 6 Nov 2026 | Paid server, backups, monitoring, minimum app version. **Pilot day at the client** and its fixes |
+| 3–6 | 4 Dec 2026 | Version 2.1 (many restaurants), export and deletion |
+| 7–9 | 25 Dec 2026 | Printing, UPI QR, café quick mode |
+| 10–11 | 8 Jan 2027 | Play Store closed testing, release key, offline ordering (stretch) |
+| 12–13 | 22 Jan 2027 | Beta with 3–5 restaurants, fixes, **launch** |
+
+The pilot day comes first on purpose: problems found in a real restaurant are cheapest to fix before 2.1 changes
+sign-in and the database.
+
+### 20.4 The pilot client (free, for a testimonial)
+Agree a short written deal now:
+- **The client gets:** POTKO free for an agreed period (for example 6 months) and priority fixes.
+- **The owner gets:** a written and a video testimonial, permission to use the restaurant's name and photos, a
+  15-minute feedback call every two weeks, and one introduction to another restaurant owner.
+
+Measure before and after, so the testimonial has numbers: orders a day, time from order to kitchen, billing mistakes
+and voids, cash mismatch at day end.
+
+### 20.5 Decisions still needed from the owner
+
+| Decision | Needed by |
+|---|---|
+| Do the client and target cafés use thermal printers, and which models (or the developer picks a common one) | Week 6 |
+| UPI: static QR first and Razorpay later — confirm | Week 6 |
+| 3–5 restaurants for the January beta | Week 10 |
+| Phone OTP or email OTP for owners (19.7) | Week 3 |
+| Pay for Render Starter | Week 1 |
+| Google Play developer account, privacy policy, support contact | Week 9 |
+| The written pilot deal with the client | Week 1 |
+| Pricing for restaurants after the launch | Week 12 |
